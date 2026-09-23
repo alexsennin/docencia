@@ -4,17 +4,67 @@ import { useMemo, useState } from "react";
 
 type Group = "Todos" | "1° A" | "1° B" | "2° A" | "2° B" | "3° A" | "3° B";
 type Status = "Todos" | "Definitiva" | "Provisional";
+type PartialStatus = "Activo" | "Pendiente";
+
+type EvaluationComponent = {
+  id: "attendance" | "tasks" | "conduct" | "exam";
+  label: string;
+  description: string;
+  detail: string;
+  icon: string;
+};
+
+type PartialPeriod = {
+  id: string;
+  name: string;
+  sequence: number;
+  status: PartialStatus;
+  components: EvaluationComponent[];
+};
 
 const groups: Exclude<Group, "Todos">[] = ["1° A", "1° B", "2° A", "2° B", "3° A", "3° B"];
+const evaluationComponents: EvaluationComponent[] = [
+  { id: "attendance", label: "Asistencias", description: "Presencia por clase", detail: "Registro por fecha y alumno", icon: "✓" },
+  { id: "tasks", label: "Tareas", description: "Trabajos en clase y tareas", detail: "Actividades y entregas", icon: "▤" },
+  { id: "conduct", label: "Conducta y actitud", description: "Valoración formativa", detail: "Criterios y observaciones", icon: "♡" },
+  { id: "exam", label: "Examen", description: "Instrumento del parcial", detail: "Calificación del examen", icon: "⌁" },
+];
+
+const initialPartials: PartialPeriod[] = [
+  { id: "partial-1", name: "1er parcial", sequence: 1, status: "Activo", components: evaluationComponents },
+  { id: "partial-2", name: "2do parcial", sequence: 2, status: "Pendiente", components: evaluationComponents },
+];
 
 export default function Home() {
   const [group, setGroup] = useState<Group>("Todos");
   const [status, setStatus] = useState<Status>("Todos");
+  const [partials, setPartials] = useState<PartialPeriod[]>(initialPartials);
+  const [selectedPartialId, setSelectedPartialId] = useState("partial-1");
+  const [isAddingPartial, setIsAddingPartial] = useState(false);
+  const [newPartialName, setNewPartialName] = useState("");
 
   const visibleGroups = useMemo(
     () => (group === "Todos" ? groups : groups.filter((item) => item === group)),
     [group],
   );
+  const selectedPartial = partials.find((item) => item.id === selectedPartialId) ?? partials[0];
+
+  function addPartial(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = newPartialName.trim();
+    if (!name) return;
+    const nextPartial: PartialPeriod = {
+      id: `partial-${Date.now()}`,
+      name,
+      sequence: partials.length + 1,
+      status: "Pendiente",
+      components: evaluationComponents,
+    };
+    setPartials((current) => [...current, nextPartial]);
+    setSelectedPartialId(nextPartial.id);
+    setNewPartialName("");
+    setIsAddingPartial(false);
+  }
 
   return (
     <main className="app-shell">
@@ -32,9 +82,13 @@ export default function Home() {
             <span className="nav-icon" aria-hidden="true">⌂</span>
             Resumen
           </a>
-          <a className="nav-item active" href="#resultados" aria-current="page">
+          <a className="nav-item" href="#resultados">
             <span className="nav-icon" aria-hidden="true">▤</span>
             Resultados
+          </a>
+          <a className="nav-item active" href="#parciales" aria-current="page">
+            <span className="nav-icon" aria-hidden="true">◫</span>
+            Parciales
           </a>
           <a className="nav-item" href="#grupos">
             <span className="nav-icon" aria-hidden="true">◎</span>
@@ -55,9 +109,9 @@ export default function Home() {
         <header className="topbar">
           <div>
             <p className="eyebrow">PANEL DOCENTE <span>•</span> EVALUACIÓN</p>
-            <h1>Resultados por grupo</h1>
+            <h1>Evaluación por parciales</h1>
             <p className="page-description">
-              Consulta el avance de cada grupo y revisa las calificaciones de sus exámenes.
+              Organiza los periodos y consulta el avance de cada grupo.
             </p>
           </div>
           <div className="teacher-chip" aria-label="Sesión docente">
@@ -69,6 +123,89 @@ export default function Home() {
             <span className="chevron" aria-hidden="true">⌄</span>
           </div>
         </header>
+
+        <section className="partials-section" id="parciales" aria-labelledby="partials-title">
+          <div className="section-heading partials-heading">
+            <div>
+              <p className="eyebrow">PERIODOS ACADÉMICOS</p>
+              <h2 id="partials-title">Parciales</h2>
+            </div>
+            <button className="primary-button" type="button" onClick={() => setIsAddingPartial((current) => !current)}>
+              <span aria-hidden="true">＋</span> Nuevo parcial
+            </button>
+          </div>
+
+          {isAddingPartial && (
+            <form className="new-partial-form" onSubmit={addPartial}>
+              <label>
+                <span>Nombre del parcial</span>
+                <input
+                  value={newPartialName}
+                  onChange={(event) => setNewPartialName(event.target.value)}
+                  placeholder="Ej. 3er parcial"
+                  autoFocus
+                />
+              </label>
+              <button className="primary-button compact" type="submit">Crear parcial</button>
+              <span className="form-note">Se agregará con los cuatro componentes de evaluación.</span>
+            </form>
+          )}
+
+          <div className="partial-list" role="list" aria-label="Parciales disponibles">
+            {partials.map((partial) => (
+              <button
+                className={`partial-card ${selectedPartialId === partial.id ? "selected" : ""}`}
+                key={partial.id}
+                type="button"
+                onClick={() => setSelectedPartialId(partial.id)}
+                role="listitem"
+              >
+                <span className="partial-number">{partial.sequence}</span>
+                <span className="partial-card-copy">
+                  <strong>{partial.name}</strong>
+                  <small>{partial.components.length} componentes de evaluación</small>
+                </span>
+                <span className={`partial-status ${partial.status.toLowerCase()}`}>{partial.status}</span>
+                <span className="partial-arrow" aria-hidden="true">›</span>
+              </button>
+            ))}
+          </div>
+
+          {selectedPartial && (
+            <div className="partial-detail">
+              <div className="partial-detail-header">
+                <div>
+                  <p className="eyebrow">CONFIGURACIÓN DEL PARCIAL</p>
+                  <h3>{selectedPartial.name}</h3>
+                  <p>La ponderación de cada componente queda disponible para definirla más adelante.</p>
+                </div>
+                <span className="weight-total">Ponderación total <strong>Por definir</strong></span>
+              </div>
+
+              <div className="component-grid">
+                {selectedPartial.components.map((component) => (
+                  <article className="component-card" key={component.id}>
+                    <div className={`component-icon ${component.id}`} aria-hidden="true">{component.icon}</div>
+                    <div className="component-copy">
+                      <h4>{component.label}</h4>
+                      <p>{component.description}</p>
+                      <span>{component.detail}</span>
+                    </div>
+                    <span className="component-weight">Peso pendiente</span>
+                  </article>
+                ))}
+              </div>
+
+              <div className="partial-capture">
+                <div>
+                  <strong>Captura por grupo</strong>
+                  <span>Cada componente se podrá registrar por alumno dentro del grupo.</span>
+                </div>
+                <span className="schema-note">EVALUACIONES · lista para conectar</span>
+              </div>
+            </div>
+          )}
+        </section>
 
         <section className="filters-panel" aria-label="Filtros de resultados">
           <div className="filter-heading">
@@ -123,7 +260,7 @@ export default function Home() {
           <article className="metric-card">
             <div className="metric-icon violet" aria-hidden="true">◷</div>
             <div><span>Evaluaciones pendientes</span><strong>—</strong></div>
-            <small>Sin examen publicado todavía</small>
+            <small>Sin resultados registrados</small>
           </article>
         </section>
 

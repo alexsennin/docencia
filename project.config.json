@@ -13,7 +13,34 @@
     "url": "https://docs.google.com/spreadsheets/d/1YcnvSaHeIpZrbthI8rNOKIEJy0Z6QQ-06VCROS4Yh48/edit",
     "role": "database",
     "sheetName": "Registros",
-    "timeZone": "America/Mexico_City"
+    "timeZone": "America/Mexico_City",
+    "tables": [
+      {
+        "sheetName": "Registros",
+        "role": "students",
+        "columns": ["id", "nombre", "nivel", "grado", "grupo", "ciclo_escolar", "asignacion", "hoja_origen"]
+      },
+      {
+        "sheetName": "PARCIALES",
+        "role": "partial_definitions",
+        "columns": ["parcial_id", "nombre", "orden", "ciclo_escolar", "estado", "fecha_inicio", "fecha_cierre", "peso_asistencias", "peso_trabajos_clase", "peso_tareas", "peso_conducta", "peso_actitud", "peso_examen", "ponderacion_total", "created_at", "updated_at"]
+      },
+      {
+        "sheetName": "EVALUACIONES",
+        "role": "student_partial_evaluations",
+        "columns": ["evaluacion_id", "parcial_id", "alumno_id", "grupo", "asistencias", "trabajos_clase", "tareas", "conducta", "actitud", "examen", "calificacion_total", "estado", "observaciones", "updated_at"]
+      },
+      {
+        "sheetName": "TAREAS",
+        "role": "task_definitions",
+        "columns": ["tarea_id", "parcial_id", "nombre", "tipo", "fecha", "puntaje_maximo", "activa", "created_at"]
+      },
+      {
+        "sheetName": "CALIFICACIONES_TAREAS",
+        "role": "student_task_scores",
+        "columns": ["registro_id", "tarea_id", "alumno_id", "grupo", "puntaje", "estado", "observaciones", "updated_at"]
+      }
+    ]
   },
   "vercel": {
     "teamId": "team_vBGSim0Om0qNR6PJXwpuSvow",
