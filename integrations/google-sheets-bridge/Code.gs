@@ -30,6 +30,7 @@ function dispatch_(action, payload) {
   if (action === 'saveAnswers') return saveAnswers_(payload);
   if (action === 'examEvent') return examEvent_(payload);
   if (action === 'unlockAttempt') return unlockAttempt_(payload);
+  if (action === 'revokeExam') return revokeExam_(payload);
   if (action === 'submitAttempt') return submitAttempt_(payload);
   if (action === 'finalizeAttempt') return finalizeAttempt_(payload);
   throw new Error('Acción no soportada: ' + action);
@@ -69,8 +70,12 @@ function lookupStudent_(studentId) {
   var students = rows_('Registros');
   var student = students.find(function(item) { return String(item.id).trim().toUpperCase() === String(studentId || '').trim().toUpperCase(); });
   if (!student) throw new Error('No se encontró el ID escolar');
+  var assignments = rows_('EXAMEN_ASIGNACIONES').filter(function(item) {
+    return String(item.alumno_id).trim().toUpperCase() === String(student.id).trim().toUpperCase() && String(item.estado).toUpperCase() === 'ACTIVO';
+  });
+  var assignedExamIds = assignments.map(function(item) { return item.examen_id; });
   var exams = rows_('EXAMENES').filter(function(exam) {
-    return exam.estado === 'Publicado' && exam.grado === student.grado && (exam.grupo === 'TODOS' || exam.grupo === student.grupo);
+    return exam.estado === 'Publicado' && (assignedExamIds.indexOf(exam.examen_id) >= 0 || (exam.grado === student.grado && (exam.grupo === 'TODOS' || exam.grupo === student.grupo)));
   });
   var questions = rows_('REACTIVOS');
   return { student: { id: student.id, name: student.nombre, grade: student.grado, group: student.grupo }, exams: exams.map(function(exam) { return publicExam_(exam, questions.filter(function(item) { return item.examen_id === exam.examen_id && String(item.activo).toUpperCase() !== 'FALSE'; })); }) };
@@ -129,11 +134,47 @@ function examEvent_(payload) {
 }
 
 function unlockAttempt_(payload) {
-  var expected = PropertiesService.getScriptProperties().getProperty('EXAM_UNLOCK_PASSWORD');
-  if (!expected || payload.password !== expected) throw new Error('Contraseña incorrecta');
+  assertTeacherPassword_(payload.password);
   updateById_('INTENTOS', 'intento_id', payload.attemptId, { bloqueo_activo: 'false', estado: 'Activo', updated_at: new Date().toISOString() });
   append_('EVENTOS', ['event-' + Utilities.getUuid(), 'exam_unlocked', 'INTENTOS', payload.attemptId, '', '', 'docente', JSON.stringify({}), new Date().toISOString()]);
   return { ok: true, unlockedAt: new Date().toISOString() };
+}
+
+function assertTeacherPassword_(password) {
+  var expected = PropertiesService.getScriptProperties().getProperty('EXAM_UNLOCK_PASSWORD');
+  if (!expected || password !== expected) throw new Error('Contraseña incorrecta');
+}
+
+function revokeExam_(payload) {
+  assertTeacherPassword_(payload.password);
+  if (!payload.studentId || !payload.examId) throw new Error('Alumno y examen son obligatorios');
+  var exam = rows_('EXAMENES').find(function(item) { return item.examen_id === payload.examId; });
+  if (!exam) throw new Error('Examen no encontrado');
+  var attempts = rows_('INTENTOS').filter(function(item) {
+    return String(item.alumno_id).trim().toUpperCase() === String(payload.studentId).trim().toUpperCase() && item.examen_id === payload.examId;
+  });
+  var attemptIds = {};
+  attempts.forEach(function(item) { attemptIds[item.intento_id] = true; });
+  var lock = LockService.getScriptLock(); lock.waitLock(15000);
+  try {
+    var deletedAnswers = deleteRowsByIds_('RESPUESTAS', 'intento_id', attemptIds);
+    var deletedAi = deleteRowsByIds_('EVALUACION_AI', 'intento_id', attemptIds);
+    var deletedAttempts = deleteRowsByIds_('INTENTOS', 'intento_id', attemptIds);
+    append_('EVENTOS', ['event-' + Utilities.getUuid(), 'exam_revoked', 'EXAMENES', payload.examId, exam.parcial_id || '', payload.studentId, 'docente', JSON.stringify({ attemptIds: Object.keys(attemptIds), deletedAnswers: deletedAnswers, deletedAi: deletedAi, deletedAttempts: deletedAttempts }), new Date().toISOString()]);
+    return { ok: true, examId: payload.examId, studentId: payload.studentId, deletedAnswers: deletedAnswers, deletedAi: deletedAi, deletedAttempts: deletedAttempts, canRetake: true };
+  } finally { lock.releaseLock(); }
+}
+
+function deleteRowsByIds_(name, key, ids) {
+  var tab = sheet_().getSheetByName(name);
+  var all = tab.getDataRange().getValues();
+  var headers = all.shift();
+  var column = headers.indexOf(key);
+  if (column < 0) return 0;
+  var rowNumbers = [];
+  all.forEach(function(row, index) { if (ids[String(row[column] || '')]) rowNumbers.push(index + 2); });
+  rowNumbers.sort(function(a, b) { return b - a; }).forEach(function(rowNumber) { tab.deleteRow(rowNumber); });
+  return rowNumbers.length;
 }
 
 function submitAttempt_(payload) {

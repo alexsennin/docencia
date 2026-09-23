@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { AdminExamControls } from "../components/admin-exam-controls";
 
 type Group = "Todos" | "1° A" | "1° B" | "2° A" | "2° B" | "3° A" | "3° B";
 type Status = "Todos" | "Definitiva" | "Provisional";
@@ -131,6 +132,8 @@ export default function Home() {
           </div>
           <a className="primary-button" href="/alumno">Abrir acceso alumno</a>
         </div>
+
+        <AdminExamControls />
 
         <section className="partials-section" id="parciales" aria-labelledby="partials-title">
           <div className="section-heading partials-heading">
