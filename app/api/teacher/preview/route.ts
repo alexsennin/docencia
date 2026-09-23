@@ -31,7 +31,9 @@ export async function POST(request: Request) {
     const result = evaluateAutomatic(exam, body.answers, "vista-docente", "docente");
     for (const question of exam.questions.filter((item) => item.evaluationMethod === "ai" && body.answers?.[item.id])) {
       try {
-        const ai = await evaluateOpenWithGemini(exam, question, body.answers[question.id]);
+        const ai = hasSheetsBridge()
+          ? (await sheetsBridge<{ evaluation: NonNullable<Awaited<ReturnType<typeof evaluateOpenWithGemini>>> }>("evaluateOpenAnswer", { examId: exam.id, questionId: question.id, answer: body.answers[question.id] })).evaluation
+          : await evaluateOpenWithGemini(exam, question, body.answers[question.id]);
         const item = result.items.find((entry) => entry.questionId === question.id);
         if (ai && item) {
           item.score = Math.max(0, Math.min(question.maxScore, Number(ai.score) || 0));

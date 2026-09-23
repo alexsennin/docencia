@@ -26,6 +26,10 @@ function authorize_(token) {
 function dispatch_(action, payload) {
   if (action === 'lookupStudent') return lookupStudent_(payload.studentId);
   if (action === 'listExamResults') return listExamResults_();
+  if (action === 'getGeminiConfig') return getGeminiConfig_();
+  if (action === 'setGeminiConfig') return setGeminiConfig_(payload);
+  if (action === 'testGeminiConnection') return testGeminiConnection_();
+  if (action === 'evaluateOpenAnswer') return evaluateOpenAnswer_(payload);
   if (action === 'getExamDefinition') return getExamDefinition_(payload.examId);
   if (action === 'startAttempt') return startAttempt_(payload);
   if (action === 'saveAnswers') return saveAnswers_(payload);
@@ -90,6 +94,67 @@ function lookupStudent_(studentId) {
 }
 
 function sameId_(a, b) { return String(a || '').trim().toUpperCase() === String(b || '').trim().toUpperCase(); }
+
+function getGeminiConfig_() {
+  var properties = PropertiesService.getScriptProperties();
+  return { configured: Boolean(properties.getProperty('GEMINI_API_KEY')), model: properties.getProperty('GEMINI_MODEL') || 'gemini-3.6-flash' };
+}
+
+function setGeminiConfig_(payload) {
+  var model = String(payload.model || '').trim();
+  if (!/^gemini-[a-z0-9.-]{2,80}$/i.test(model)) throw new Error('Escribe un nombre de modelo Gemini válido.');
+  var properties = PropertiesService.getScriptProperties();
+  var apiKey = String(payload.apiKey || '').trim();
+  if (apiKey && (apiKey.length < 20 || apiKey.length > 256)) throw new Error('La clave API no tiene un formato válido.');
+  if (apiKey) properties.setProperty('GEMINI_API_KEY', apiKey);
+  if (!apiKey && !properties.getProperty('GEMINI_API_KEY')) throw new Error('Captura una clave API de Gemini para configurarla.');
+  properties.setProperty('GEMINI_MODEL', model);
+  return getGeminiConfig_();
+}
+
+function testGeminiConnection_() {
+  var properties = PropertiesService.getScriptProperties();
+  var apiKey = properties.getProperty('GEMINI_API_KEY');
+  var model = properties.getProperty('GEMINI_MODEL') || 'gemini-3.6-flash';
+  if (!apiKey) throw new Error('Primero guarda una clave API de Gemini.');
+  var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(apiKey);
+  var response;
+  try {
+    response = UrlFetchApp.fetch(url, { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      payload: JSON.stringify({ contents: [{ parts: [{ text: 'Responde únicamente: OK' }] }], generationConfig: { maxOutputTokens: 8, temperature: 0 } }) });
+  } catch (_) { throw new Error('No se pudo conectar con Gemini. Revisa que Apps Script tenga autorización para conectarse.'); }
+  if (response.getResponseCode() < 200 || response.getResponseCode() >= 300) throw new Error('Gemini no aceptó la solicitud (HTTP ' + response.getResponseCode() + '). Revisa el modelo, el estado de la API y la clave.');
+  return { connected: true, model: model };
+}
+
+function evaluateOpenAnswer_(payload) {
+  var examResult = getExamDefinition_(payload.examId);
+  var exam = examResult.exam;
+  var question = exam.questions.find(function(item) { return item.id === payload.questionId && item.evaluationMethod === 'ai'; });
+  if (!question) throw new Error('Reactivo abierto no encontrado.');
+  if (payload.attemptId) {
+    var attempt = activeAttempt_(payload);
+    if (attempt.examen_id !== exam.id) throw new Error('Intento no autorizado para este examen.');
+  }
+  var properties = PropertiesService.getScriptProperties();
+  var apiKey = properties.getProperty('GEMINI_API_KEY');
+  var model = properties.getProperty('GEMINI_MODEL') || 'gemini-3.6-flash';
+  if (!apiKey) throw new Error('La clave de Gemini aún no está configurada.');
+  var prompt = 'Evalúa la respuesta de un alumno de Español usando exclusivamente la consigna y rúbrica. Devuelve JSON con score, level, feedback, strengths y opportunities. score debe ser numérico entre 0 y ' + question.maxScore + '.\nExamen: ' + exam.name + '\nConsigna: ' + question.prompt + '\nRespuesta: ' + JSON.stringify(payload.answer || '') + '\nRúbrica: ' + JSON.stringify(question.rubric || {});
+  var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(apiKey);
+  var response;
+  try {
+    response = UrlFetchApp.fetch(url, { method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      payload: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.1 } }) });
+  } catch (_) { throw new Error('No se pudo conectar con Gemini.'); }
+  if (response.getResponseCode() < 200 || response.getResponseCode() >= 300) throw new Error('La evaluación Gemini falló (HTTP ' + response.getResponseCode() + ').');
+  var body = JSON.parse(response.getContentText());
+  var text = body.candidates && body.candidates[0] && body.candidates[0].content && body.candidates[0].content.parts && body.candidates[0].content.parts[0] && body.candidates[0].content.parts[0].text;
+  if (!text) throw new Error('Gemini no devolvió una evaluación.');
+  var evaluation = JSON.parse(String(text).replace(/^```json\s*/i, '').replace(/\s*```$/, ''));
+  evaluation.score = Math.max(0, Math.min(question.maxScore, Number(evaluation.score) || 0));
+  return { evaluation: evaluation, model: model };
+}
 
 function listExamResults_() {
   var students = rows_('Registros');
@@ -259,7 +324,7 @@ function finalizeAttempt_(payload) {
     ]);
     if (question.evaluationMethod === 'ai') {
       upsert_('EVALUACION_AI', ['intento_id', 'reactivo_id'], [payload.attemptId, reactivoId], [
-        'ai-' + Utilities.getUuid(), payload.attemptId, reactivoId, payload.model || 'gemini-3.6-flash', '1.0', JSON.stringify({ answer: answers[reactivoId], rubric: question.rubric }), item.status === 'pendiente_ia' ? 'Pendiente' : 'Evaluada', item.score === null || item.score === undefined ? '' : item.score, item.feedback || '', JSON.stringify(item), '', new Date().toISOString(), ''
+        'ai-' + Utilities.getUuid(), payload.attemptId, reactivoId, PropertiesService.getScriptProperties().getProperty('GEMINI_MODEL') || payload.model || 'gemini-3.6-flash', '1.0', JSON.stringify({ answer: answers[reactivoId], rubric: question.rubric }), item.status === 'pendiente_ia' ? 'Pendiente' : 'Evaluada', item.score === null || item.score === undefined ? '' : item.score, item.feedback || '', JSON.stringify(item), '', new Date().toISOString(), ''
       ]);
     }
   });

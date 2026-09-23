@@ -12,7 +12,12 @@ export async function POST(request: Request) {
     if (hasSheetsBridge()) {
       const remote = await sheetsBridge<{ exam: Parameters<typeof evaluateAutomatic>[0] }>("getExamDefinition", { examId: payload.examId });
       const result = evaluateAutomatic(remote.exam, payload.answers, payload.attemptId, payload.studentId);
-      await evaluateAi_(remote.exam, payload.answers, result);
+      await evaluateAi_(remote.exam, payload.answers, result, async (question, answer) => {
+        const response = await sheetsBridge<{ evaluation: NonNullable<Awaited<ReturnType<typeof evaluateOpenWithGemini>>> }>("evaluateOpenAnswer", {
+          examId: payload.examId, questionId: question.id, answer, attemptId: payload.attemptId, studentId: payload.studentId,
+        });
+        return response.evaluation;
+      });
       await sheetsBridge("finalizeAttempt", { ...payload, result, model: process.env.GEMINI_MODEL || "gemini-3.6-flash" });
       return Response.json({ result, source: "sheets" });
     }
@@ -26,13 +31,13 @@ export async function POST(request: Request) {
   }
 }
 
-async function evaluateAi_(exam: Parameters<typeof evaluateAutomatic>[0], answers: AnswerMap, result: ExamResult) {
-  if (!process.env.GEMINI_API_KEY) return;
+async function evaluateAi_(exam: Parameters<typeof evaluateAutomatic>[0], answers: AnswerMap, result: ExamResult, evaluate = evaluateOpenWithGemini) {
+  if (evaluate === evaluateOpenWithGemini && !process.env.GEMINI_API_KEY) return;
   for (const question of exam.questions.filter((item) => item.evaluationMethod === "ai")) {
     const answer = answers[question.id];
     if (!answer) continue;
     try {
-      const ai = await evaluateOpenWithGemini(exam, question, answer);
+      const ai = await evaluate(exam, question, answer);
       if (ai) {
         const item = result.items.find((candidate) => candidate.questionId === question.id);
       if (item) {
