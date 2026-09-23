@@ -4,7 +4,7 @@ Base inicial para [`docencia.integratech.app`](https://docencia.integratech.app)
 
 El repositorio es privado en GitHub y el proyecto de Vercel usa la rama `main` como referencia de producción. El dominio `integratech.app` usa los nameservers de Vercel; no se modificaron registros ajenos a este proyecto.
 
-La base inicial es la hoja nativa de Google Sheets [`Docencia`](https://docs.google.com/spreadsheets/d/1YcnvSaHeIpZrbthI8rNOKIEJy0Z6QQ-06VCROS4Yh48/edit), con zona horaria `America/Mexico_City`. La estructura académica contempla parciales ilimitados, asistencia detallada, tareas, conducta y actitud, exámenes digitales, calificaciones consolidadas, reportes de IA, auditoría, accesos y una cola de salida para Innovat. El puente de lectura/escritura desde Vercel se agregará cuando se defina el mecanismo de autenticación de Google; no se guardan credenciales en el repositorio.
+La base inicial es la hoja nativa de Google Sheets [`Docencia`](https://docs.google.com/spreadsheets/d/1YcnvSaHeIpZrbthI8rNOKIEJy0Z6QQ-06VCROS4Yh48/edit), con zona horaria `America/Mexico_City`. La estructura académica contempla parciales ilimitados, asistencia detallada, tareas, conducta y actitud, exámenes digitales, calificaciones consolidadas, reportes de IA, auditoría, accesos y una cola de salida para Innovat. El puente seguro de Apps Script está en `integrations/google-sheets-bridge/Code.gs`; sus propiedades y tokens se configuran fuera del repositorio.
 
 ## Estructura de evaluación
 
@@ -45,5 +45,11 @@ npm run dev
 npm run lint
 npm run build
 ```
+
+## Exámenes digitales
+
+La vista de alumno está en `/alumno`. Los tres exámenes publicados se normalizaron a 100 puntos, con máximo de 50 minutos, reactivos cerrados de autocalificación y reactivos abiertos pendientes de IA/revisión docente. La previa local reconoce `DEMO-1`, `DEMO-2` y `DEMO-3`; los IDs reales sólo se habilitan cuando `GOOGLE_SHEETS_BRIDGE_URL` y `GOOGLE_SHEETS_BRIDGE_TOKEN` están configurados en Vercel.
+
+Para activar persistencia real, despliega `integrations/google-sheets-bridge/Code.gs` como aplicación web ejecutada por la cuenta propietaria de la hoja y configura en sus propiedades `SPREADSHEET_ID`, `BRIDGE_TOKEN` y `EXAM_UNLOCK_PASSWORD`. En Vercel configura la URL de implementación, el mismo token, la clave de Gemini y la contraseña de desbloqueo. Ninguno de esos valores debe entrar al repositorio ni al navegador.
 
 El despliegue de producción se realizará desde la rama `main` en Vercel. Las variables sensibles, cuando se agreguen, deben configurarse en Vercel y no en el repositorio.

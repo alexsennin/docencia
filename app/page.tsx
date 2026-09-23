@@ -124,6 +124,14 @@ export default function Home() {
           </div>
         </header>
 
+        <div className="student-access-banner">
+          <div>
+            <strong>¿Vas a aplicar un examen?</strong>
+            <span>Abre la vista de alumno para validar el acceso por ID.</span>
+          </div>
+          <a className="primary-button" href="/alumno">Abrir acceso alumno</a>
+        </div>
+
         <section className="partials-section" id="parciales" aria-labelledby="partials-title">
           <div className="section-heading partials-heading">
             <div>
