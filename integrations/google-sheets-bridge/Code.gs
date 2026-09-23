@@ -280,7 +280,11 @@ function revokeExam_(payload) {
   if (!exam) throw new Error('Examen no encontrado');
   var lock = LockService.getScriptLock(); lock.waitLock(15000);
   try {
-    var attempts = rows_('INTENTOS').filter(function(item) { return sameId_(item.alumno_id, payload.studentId) && item.examen_id === payload.examId; });
+    var attempts = rows_('INTENTOS').filter(function(item) {
+      return sameId_(item.alumno_id, payload.studentId) && item.examen_id === payload.examId &&
+        (item.estado === 'Definitivo' || item.estado === 'Provisional');
+    });
+    if (!attempts.length) throw new Error('El alumno ya no tiene intentos entregados de este examen para revocar. Actualiza la búsqueda e inténtalo de nuevo.');
     var attemptIds = {};
     attempts.forEach(function(item) { attemptIds[item.intento_id] = true; });
     var deletedAnswers = deleteRowsByIds_('RESPUESTAS', 'intento_id', attemptIds);
