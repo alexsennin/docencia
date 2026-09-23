@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AdminExamControls } from "./admin-exam-controls";
 
 type Group = "Todos" | "1° A" | "1° B" | "2° A" | "2° B" | "3° A" | "3° B";
 type Status = "Todos" | "Definitiva" | "Provisional";
 type PartialStatus = "Activo" | "Pendiente";
+type ExamReport = { attemptId: string; studentId: string; studentName: string; grade: string; group: string; examId: string; examName: string; partialId: string; status: string; score: number | null; grade10: number | null; automaticScore: number | null; aiPending: boolean; submittedAt: string; answers: Array<{ questionId: string; answer: string; score: number | null; feedback: string; status: string }> };
 
 type EvaluationComponent = {
   id: "attendance" | "tasks" | "conduct" | "exam";
@@ -43,6 +44,32 @@ export default function Home() {
   const [selectedPartialId, setSelectedPartialId] = useState("partial-1");
   const [isAddingPartial, setIsAddingPartial] = useState(false);
   const [newPartialName, setNewPartialName] = useState("");
+  const [reports, setReports] = useState<ExamReport[]>([]);
+  const [reportError, setReportError] = useState("");
+  const [reportLoading, setReportLoading] = useState(true);
+  const [examFilter, setExamFilter] = useState("todos");
+  const [selectedAttempt, setSelectedAttempt] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const response = await fetch("/api/teacher/results", { cache: "no-store" });
+        const data = await response.json() as { results?: ExamReport[]; error?: string };
+        if (!response.ok) throw new Error(data.error || "No se pudo consultar el reporte.");
+        if (!cancelled) setReports(Array.isArray(data.results) ? data.results : []);
+      } catch (cause) { if (!cancelled) setReportError(cause instanceof Error ? cause.message : "No se pudo consultar el reporte."); }
+      finally { if (!cancelled) setReportLoading(false); }
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, []);
+
+  const exams = useMemo(() => Array.from(new Map(reports.map((item) => [item.examId, item.examName])).entries()), [reports]);
+  const filteredReports = useMemo(() => reports.filter((item) => (group === "Todos" || `${item.grade} ${item.group}` === group || item.group === group) && (status === "Todos" || (status === "Definitiva" ? item.status === "Definitivo" : item.status === "Provisional")) && (examFilter === "todos" || item.examId === examFilter)), [reports, group, status, examFilter]);
+  const gradedReports = filteredReports.filter((item) => item.grade10 !== null);
+  const average = gradedReports.length ? (gradedReports.reduce((sum, item) => sum + (item.grade10 || 0), 0) / gradedReports.length).toFixed(1) : "—";
+  const detail = reports.find((item) => item.attemptId === selectedAttempt);
 
   const visibleGroups = useMemo(
     () => (group === "Todos" ? groups : groups.filter((item) => item === group)),
@@ -129,10 +156,10 @@ export default function Home() {
 
         <div className="student-access-banner">
           <div>
-            <strong>¿Vas a aplicar un examen?</strong>
-            <span>Abre la vista de alumno para validar el acceso por ID.</span>
+            <strong>Prueba los exámenes sin ID de alumno</strong>
+            <span>Simulación docente: no crea intentos ni modifica calificaciones.</span>
           </div>
-          <a className="primary-button" href="/alumno">Abrir acceso alumno</a>
+          <a className="primary-button" href="/docente/probar">Probar los 3 exámenes</a>
         </div>
 
         <AdminExamControls />
@@ -160,7 +187,7 @@ export default function Home() {
                 />
               </label>
               <button className="primary-button compact" type="submit">Crear parcial</button>
-              <span className="form-note">Se agregará con los cuatro componentes de evaluación.</span>
+              <span className="form-note">Vista de planeación: este parcial aún no se guarda en Google Sheets.</span>
             </form>
           )}
 
@@ -231,8 +258,9 @@ export default function Home() {
 
           <label className="select-field">
             <span>Examen</span>
-            <select defaultValue="todos" disabled aria-label="Examen">
+            <select value={examFilter} onChange={(event) => setExamFilter(event.target.value)} aria-label="Examen">
               <option value="todos">Todos los exámenes</option>
+              {exams.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
             </select>
           </label>
 
@@ -257,23 +285,23 @@ export default function Home() {
         <section className="metric-grid" aria-label="Resumen del reporte">
           <article className="metric-card">
             <div className="metric-icon mint" aria-hidden="true">✓</div>
-            <div><span>Exámenes aplicados</span><strong>0</strong></div>
+            <div><span>Exámenes aplicados</span><strong>{filteredReports.length}</strong></div>
             <small>En el periodo actual</small>
           </article>
           <article className="metric-card">
             <div className="metric-icon blue" aria-hidden="true">◎</div>
-            <div><span>Alumnos evaluados</span><strong>0</strong></div>
+            <div><span>Alumnos evaluados</span><strong>{new Set(filteredReports.map((item) => item.studentId)).size}</strong></div>
             <small>Con resultado registrado</small>
           </article>
           <article className="metric-card">
             <div className="metric-icon amber" aria-hidden="true">⌁</div>
-            <div><span>Promedio general</span><strong>—</strong></div>
-            <small>Se calculará al recibir resultados</small>
+            <div><span>Promedio general</span><strong>{average}</strong></div>
+            <small>Escala de 10</small>
           </article>
           <article className="metric-card">
             <div className="metric-icon violet" aria-hidden="true">◷</div>
-            <div><span>Evaluaciones pendientes</span><strong>—</strong></div>
-            <small>Sin resultados registrados</small>
+            <div><span>Evaluaciones pendientes</span><strong>{filteredReports.filter((item) => item.aiPending).length}</strong></div>
+            <small>En revisión de IA</small>
           </article>
         </section>
 
@@ -291,15 +319,14 @@ export default function Home() {
               <article className="group-card" key={item}>
                 <div className="group-card-head">
                   <div className="group-badge">{item.replace("° ", "")}</div>
-                  <span className="empty-status">Sin resultados</span>
+                  <span className="empty-status">{reports.filter((report) => `${report.grade} ${report.group}` === item || report.group === item).length} resultados</span>
                 </div>
                 <h3>{item}</h3>
-                <div className="progress-row"><span>Avance de evaluación</span><strong>0%</strong></div>
-                <div className="progress-track"><span style={{ width: "0%" }} /></div>
+                <div className="progress-row"><span>Resultados registrados</span><strong>{reports.filter((report) => `${report.grade} ${report.group}` === item || report.group === item).length}</strong></div>
                 <dl className="group-stats">
-                  <div><dt>Aplicados</dt><dd>0</dd></div>
-                  <div><dt>Promedio</dt><dd>—</dd></div>
-                  <div><dt>Pendientes</dt><dd>—</dd></div>
+                  <div><dt>Aplicados</dt><dd>{reports.filter((report) => `${report.grade} ${report.group}` === item || report.group === item).length}</dd></div>
+                  <div><dt>Promedio</dt><dd>{(() => { const grades = reports.filter((report) => (`${report.grade} ${report.group}` === item || report.group === item) && report.grade10 !== null).map((report) => report.grade10 as number); return grades.length ? (grades.reduce((sum, value) => sum + value, 0) / grades.length).toFixed(1) : "—"; })()}</dd></div>
+                  <div><dt>Pendientes</dt><dd>{reports.filter((report) => (`${report.grade} ${report.group}` === item || report.group === item) && report.aiPending).length}</dd></div>
                 </dl>
               </article>
             ))}
@@ -317,14 +344,18 @@ export default function Home() {
             </button>
           </div>
 
-          <div className="empty-state">
+          {reportLoading && <p className="notice">Consultando resultados guardados…</p>}
+          {reportError && <p className="notice" role="alert">{reportError}</p>}
+          {!reportLoading && !reportError && filteredReports.length > 0 && <div className="report-list">{filteredReports.map((item) => <button className="report-row" key={item.attemptId} type="button" onClick={() => setSelectedAttempt(item.attemptId)}><span><strong>{item.studentName}</strong><small>{item.grade} {item.group} · {item.examName}</small></span><span>{item.status}</span><b>{item.grade10 === null ? "Pendiente" : `${item.grade10} / 10`}</b></button>)}</div>}
+          {detail && <div className="report-detail" role="dialog" aria-label="Desglose del examen"><button className="text-button" type="button" onClick={() => setSelectedAttempt(null)}>Cerrar detalle</button><h3>{detail.studentName} · {detail.examName}</h3><p>{detail.status} · {detail.grade10 === null ? "Calificación pendiente" : `${detail.grade10} / 10`}</p><div className="result-items">{detail.answers.map((item) => <div className="result-item" key={item.questionId}><strong>{item.questionId}</strong><span>{item.status}</span><b>{item.score === null ? "Pendiente" : `${item.score} puntos`}</b><small>Respuesta: {item.answer || "Sin respuesta"}</small><small>{item.feedback}</small></div>)}</div></div>}
+          {!reportLoading && !reportError && filteredReports.length === 0 && <div className="empty-state">
             <div className="empty-illustration" aria-hidden="true"><span>▥</span></div>
             <h3>Aún no hay resultados para mostrar</h3>
             <p>
               Cuando se aplique un examen y se registren sus calificaciones, aquí podrás consultar el resultado por alumno, grupo y estado.
             </p>
-            <span className="data-source">Fuente preparada: CALIFICACIONES en Google Sheets</span>
-          </div>
+            <span className="data-source">Fuente: INTENTOS y RESPUESTAS en Google Sheets</span>
+          </div>}
         </section>
 
         <footer className="workspace-footer">

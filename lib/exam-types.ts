@@ -52,7 +52,7 @@ export type Student = {
 };
 
 export type PublicQuestion = Omit<ExamQuestion, "correctAnswer" | "rubric">;
-export type PublicExam = Omit<ExamDefinition, "questions"> & { questions: PublicQuestion[] };
+export type PublicExam = Omit<ExamDefinition, "questions"> & { questions: PublicQuestion[]; attemptStatus?: string };
 
 export type AnswerMap = Record<string, string | string[]>;
 

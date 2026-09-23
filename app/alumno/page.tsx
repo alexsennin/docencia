@@ -1,5 +1,5 @@
-import StudentExamPortal from "../../components/student-exam-portal";
+import { redirect } from "next/navigation";
 
 export default function StudentPage() {
-  return <StudentExamPortal />;
+  redirect("/");
 }

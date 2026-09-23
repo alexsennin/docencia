@@ -25,6 +25,7 @@ function authorize_(token) {
 
 function dispatch_(action, payload) {
   if (action === 'lookupStudent') return lookupStudent_(payload.studentId);
+  if (action === 'listExamResults') return listExamResults_();
   if (action === 'getExamDefinition') return getExamDefinition_(payload.examId);
   if (action === 'startAttempt') return startAttempt_(payload);
   if (action === 'saveAnswers') return saveAnswers_(payload);
@@ -78,7 +79,35 @@ function lookupStudent_(studentId) {
     return exam.estado === 'Publicado' && (assignedExamIds.indexOf(exam.examen_id) >= 0 || (exam.grado === student.grado && (exam.grupo === 'TODOS' || exam.grupo === student.grupo)));
   });
   var questions = rows_('REACTIVOS');
-  return { student: { id: student.id, name: student.nombre, grade: student.grado, group: student.grupo }, exams: exams.map(function(exam) { return publicExam_(exam, questions.filter(function(item) { return item.examen_id === exam.examen_id && String(item.activo).toUpperCase() !== 'FALSE'; })); }) };
+  var attempts = rows_('INTENTOS').filter(function(item) { return sameId_(item.alumno_id, student.id); });
+  return { student: { id: student.id, name: student.nombre, grade: student.grado, group: student.grupo }, exams: exams.map(function(exam) {
+    var publicExam = publicExam_(exam, questions.filter(function(item) { return item.examen_id === exam.examen_id && String(item.activo).toUpperCase() !== 'FALSE'; }));
+    var related = attempts.filter(function(item) { return item.examen_id === exam.examen_id; });
+    var attempt = related.find(function(item) { return item.estado !== 'Activo' && item.estado !== 'Bloqueado'; }) || related[0];
+    publicExam.attemptStatus = attempt ? attempt.estado : 'Disponible';
+    return publicExam;
+  }) };
+}
+
+function sameId_(a, b) { return String(a || '').trim().toUpperCase() === String(b || '').trim().toUpperCase(); }
+
+function listExamResults_() {
+  var students = rows_('Registros');
+  var exams = rows_('EXAMENES');
+  var answers = rows_('RESPUESTAS');
+  var results = rows_('INTENTOS').filter(function(item) { return item.estado === 'Definitivo' || item.estado === 'Provisional'; });
+  return { results: results.map(function(item) {
+    var student = students.find(function(candidate) { return sameId_(candidate.id, item.alumno_id); }) || {};
+    var exam = exams.find(function(candidate) { return candidate.examen_id === item.examen_id; }) || {};
+    return { attemptId: item.intento_id, studentId: item.alumno_id, studentName: student.nombre || item.alumno_id,
+      grade: student.grado || exam.grado || '', group: item.grupo || student.grupo || '', examId: item.examen_id,
+      examName: exam.nombre || item.examen_id, partialId: item.parcial_id, status: item.estado,
+      score: item.puntaje_total === '' ? null : Number(item.puntaje_total), grade10: item.calificacion_10 === '' ? null : Number(item.calificacion_10),
+      automaticScore: item.puntaje_automatico === '' ? null : Number(item.puntaje_automatico), aiPending: String(item.ai_pendiente).toLowerCase() === 'true',
+      submittedAt: item.fin_at, answers: answers.filter(function(answer) { return answer.intento_id === item.intento_id; }).map(function(answer) {
+        return { questionId: answer.reactivo_id, answer: answer.respuesta, score: answer.puntaje_obtenido === '' ? null : Number(answer.puntaje_obtenido), feedback: answer.retroalimentacion, status: answer.estado_respuesta };
+      }) };
+  }) };
 }
 
 function getExamDefinition_(examId) {
@@ -102,22 +131,48 @@ function privateExam_(exam, questions) {
 }
 
 function startAttempt_(payload) {
-  var lookup = lookupStudent_(payload.studentId);
-  var exam = lookup.exams.find(function(item) { return item.id === payload.examId; });
-  if (!exam) throw new Error('El examen no está asignado a este alumno');
-  var startedAt = new Date();
-  var deadlineAt = new Date(startedAt.getTime() + exam.durationMinutes * 60000);
-  var attemptId = 'attempt-' + Utilities.getUuid();
-  append_('INTENTOS', [attemptId, exam.id, exam.partialId, lookup.student.id, lookup.student.group, 'Activo', startedAt.toISOString(), '', exam.durationMinutes, '', '', '', '', 'true', 'false', startedAt.toISOString(), startedAt.toISOString()]);
-  append_('EVENTOS', ['event-' + Utilities.getUuid(), 'exam_started', 'INTENTOS', attemptId, exam.partialId, lookup.student.id, lookup.student.id, JSON.stringify({ examId: exam.id }), startedAt.toISOString()]);
-  return { attemptId: attemptId, startedAt: startedAt.toISOString(), deadlineAt: deadlineAt.toISOString(), exam: exam };
+  var lock = LockService.getScriptLock(); lock.waitLock(15000);
+  try {
+    var lookup = lookupStudent_(payload.studentId);
+    var exam = lookup.exams.find(function(item) { return item.id === payload.examId; });
+    if (!exam) throw new Error('El examen no está asignado a este alumno');
+    var related = rows_('INTENTOS').filter(function(item) { return sameId_(item.alumno_id, lookup.student.id) && item.examen_id === exam.id; });
+    var existing = related.find(function(item) { return item.estado !== 'Activo' && item.estado !== 'Bloqueado'; }) || related[0];
+    if (existing && (existing.estado === 'Activo' || existing.estado === 'Bloqueado')) {
+      var saved = {};
+      rows_('RESPUESTAS').filter(function(item) { return item.intento_id === existing.intento_id; }).forEach(function(item) {
+        var value = item.respuesta;
+        try { if (String(value).charAt(0) === '[') value = JSON.parse(value); } catch (_) {}
+        saved[item.reactivo_id] = value;
+      });
+      var originalStart = new Date(existing.inicio_at);
+      return { attemptId: existing.intento_id, startedAt: originalStart.toISOString(), deadlineAt: new Date(originalStart.getTime() + Number(existing.tiempo_limite_min || 50) * 60000).toISOString(), exam: exam, answers: saved, locked: existing.estado === 'Bloqueado', resumed: true };
+    }
+    if (existing) throw new Error('Este examen ya fue presentado. Solicita al docente que lo revoque si necesitas repetirlo.');
+    var startedAt = new Date();
+    var deadlineAt = new Date(startedAt.getTime() + exam.durationMinutes * 60000);
+    var attemptId = 'attempt-' + Utilities.getUuid();
+    append_('INTENTOS', [attemptId, exam.id, exam.partialId, lookup.student.id, lookup.student.group, 'Activo', startedAt.toISOString(), '', exam.durationMinutes, '', '', '', '', 'true', 'false', startedAt.toISOString(), startedAt.toISOString()]);
+    append_('EVENTOS', ['event-' + Utilities.getUuid(), 'exam_started', 'INTENTOS', attemptId, exam.partialId, lookup.student.id, lookup.student.id, JSON.stringify({ examId: exam.id }), startedAt.toISOString()]);
+    return { attemptId: attemptId, startedAt: startedAt.toISOString(), deadlineAt: deadlineAt.toISOString(), exam: exam };
+  } finally { lock.releaseLock(); }
+}
+
+function activeAttempt_(payload) {
+  var attempt = rows_('INTENTOS').find(function(item) { return item.intento_id === payload.attemptId; });
+  if (!attempt || !sameId_(attempt.alumno_id, payload.studentId) || attempt.examen_id !== payload.examId) throw new Error('Intento no autorizado');
+  if (attempt.estado !== 'Activo' && attempt.estado !== 'Bloqueado') throw new Error('El examen ya fue enviado');
+  return attempt;
 }
 
 function saveAnswers_(payload) {
   var answers = payload.answers || {};
   var lock = LockService.getScriptLock(); lock.waitLock(15000);
   try {
+    var attempt = activeAttempt_(payload);
+    var allowed = rows_('REACTIVOS').filter(function(item) { return item.examen_id === attempt.examen_id; }).map(function(item) { return item.reactivo_id; });
     Object.keys(answers).forEach(function(reactivoId) {
+      if (allowed.indexOf(reactivoId) < 0) throw new Error('Reactivo no autorizado');
       var value = Array.isArray(answers[reactivoId]) ? JSON.stringify(answers[reactivoId]) : String(answers[reactivoId] || '');
       upsert_('RESPUESTAS', ['intento_id', 'reactivo_id'], [payload.attemptId, reactivoId], [
         'answer-' + Utilities.getUuid(), payload.attemptId, reactivoId, payload.studentId, value, value ? 'Guardada' : 'Sin_respuesta', '', '', '', '', new Date().toISOString()
@@ -128,13 +183,16 @@ function saveAnswers_(payload) {
 }
 
 function examEvent_(payload) {
+  var attempt = activeAttempt_(payload);
   append_('EVENTOS', ['event-' + Utilities.getUuid(), String(payload.event || 'exam_event'), 'INTENTOS', payload.attemptId || '', payload.partialId || '', payload.studentId || '', payload.studentId || '', JSON.stringify(payload), payload.at || new Date().toISOString()]);
-  if (payload.event === 'window_blur' || payload.event === 'visibility_hidden' || payload.event === 'fullscreen_exit') updateById_('INTENTOS', 'intento_id', payload.attemptId, { bloqueo_activo: 'true', estado: 'Bloqueado', updated_at: new Date().toISOString() });
+  if (payload.event === 'window_blur' || payload.event === 'visibility_hidden' || payload.event === 'fullscreen_exit') updateById_('INTENTOS', 'intento_id', attempt.intento_id, { bloqueo_activo: 'true', estado: 'Bloqueado', updated_at: new Date().toISOString() });
   return { recorded: true };
 }
 
 function unlockAttempt_(payload) {
   assertTeacherPassword_(payload.password);
+  var attempt = rows_('INTENTOS').find(function(item) { return item.intento_id === payload.attemptId && item.estado === 'Bloqueado'; });
+  if (!attempt) throw new Error('No hay un intento bloqueado para desbloquear');
   updateById_('INTENTOS', 'intento_id', payload.attemptId, { bloqueo_activo: 'false', estado: 'Activo', updated_at: new Date().toISOString() });
   append_('EVENTOS', ['event-' + Utilities.getUuid(), 'exam_unlocked', 'INTENTOS', payload.attemptId, '', '', 'docente', JSON.stringify({}), new Date().toISOString()]);
   return { ok: true, unlockedAt: new Date().toISOString() };
@@ -150,13 +208,11 @@ function revokeExam_(payload) {
   if (!payload.studentId || !payload.examId) throw new Error('Alumno y examen son obligatorios');
   var exam = rows_('EXAMENES').find(function(item) { return item.examen_id === payload.examId; });
   if (!exam) throw new Error('Examen no encontrado');
-  var attempts = rows_('INTENTOS').filter(function(item) {
-    return String(item.alumno_id).trim().toUpperCase() === String(payload.studentId).trim().toUpperCase() && item.examen_id === payload.examId;
-  });
-  var attemptIds = {};
-  attempts.forEach(function(item) { attemptIds[item.intento_id] = true; });
   var lock = LockService.getScriptLock(); lock.waitLock(15000);
   try {
+    var attempts = rows_('INTENTOS').filter(function(item) { return sameId_(item.alumno_id, payload.studentId) && item.examen_id === payload.examId; });
+    var attemptIds = {};
+    attempts.forEach(function(item) { attemptIds[item.intento_id] = true; });
     var deletedAnswers = deleteRowsByIds_('RESPUESTAS', 'intento_id', attemptIds);
     var deletedAi = deleteRowsByIds_('EVALUACION_AI', 'intento_id', attemptIds);
     var deletedAttempts = deleteRowsByIds_('INTENTOS', 'intento_id', attemptIds);
@@ -184,6 +240,9 @@ function submitAttempt_(payload) {
 }
 
 function finalizeAttempt_(payload) {
+  var lock = LockService.getScriptLock(); lock.waitLock(15000);
+  try {
+  activeAttempt_(payload);
   var result = payload.result || {};
   var answers = payload.answers || {};
   var exam = getExamDefinition_(payload.examId).exam;
@@ -214,6 +273,7 @@ function finalizeAttempt_(payload) {
     ai_pendiente: result.aiPending ? 'true' : 'false', bloqueo_activo: 'false', updated_at: new Date().toISOString(),
   });
   return { ok: true, finalizedAt: new Date().toISOString() };
+  } finally { lock.releaseLock(); }
 }
 
 function append_(name, values) {

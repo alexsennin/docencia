@@ -48,16 +48,18 @@ npm run build
 
 ## Acceso docente
 
-La ruta principal solicita una única contraseña en `/docente/ingresar`. Una sesión firmada en una cookie `HttpOnly`, `Secure` y `SameSite=Strict` protege el panel y las rutas administrativas durante ocho horas. El botón `Salir` cierra la sesión del navegador. `/alumno` permanece disponible para el acceso por ID.
+La ruta principal `/` es el único acceso: un ID escolar abre los exámenes asignados y la contraseña docente abre el panel. `/alumno` y `/docente/ingresar` redirigen a `/`. Una sesión firmada en una cookie `HttpOnly`, `Secure` y `SameSite=Strict` protege el panel y las rutas administrativas durante ocho horas. El botón `Salir` cierra la sesión del navegador.
 
 Configura `TEACHER_PASSWORD` y `TEACHER_SESSION_SECRET` como variables sensibles de Production en Vercel. La primera contiene la clave compartida para iniciar sesión; la segunda debe ser un valor aleatorio de al menos 32 bytes. No incluyas ninguna de las dos en Git ni en variables `NEXT_PUBLIC_`.
 
 ## Exámenes digitales
 
-La vista de alumno está en `/alumno`. Los tres exámenes publicados se normalizaron a 100 puntos, con máximo de 50 minutos, reactivos cerrados de autocalificación y reactivos abiertos pendientes de IA/revisión docente. La previa local reconoce `DEMO-1`, `DEMO-2` y `DEMO-3`; los IDs reales sólo se habilitan cuando `GOOGLE_SHEETS_BRIDGE_URL` y `GOOGLE_SHEETS_BRIDGE_TOKEN` están configurados en Vercel.
+Los tres exámenes publicados se normalizaron a 100 puntos, con máximo de 50 minutos, reactivos cerrados de autocalificación y reactivos abiertos pendientes de IA/revisión docente. El puente de Sheets aplica un bloqueo atómico para impedir un segundo intento; si el mismo intento sigue activo, puede reanudarse con las respuestas y el reloj originales. Un examen enviado queda bloqueado hasta que el docente lo revoque.
+
+El panel docente consulta resultados reales de `INTENTOS` y `RESPUESTAS` por grupo, examen y estado, con desglose de cada reactivo. La vista `/docente/probar` carga los tres exámenes reales para una simulación privada sin usar ID, guardar respuestas ni alterar calificaciones.
 
 El panel docente incluye `Revocar examen`. La operación requiere la contraseña docente configurada, elimina los intentos, respuestas y evaluaciones de IA del alumno para el examen seleccionado, conserva el evento de auditoría en `EVENTOS` y deja vigente la asignación para que el alumno pueda volver a presentarlo. Las asignaciones individuales se registran en `EXAMEN_ASIGNACIONES` y tienen prioridad sobre el filtro ordinario de grado y grupo.
 
-Para activar persistencia real, despliega `integrations/google-sheets-bridge/Code.gs` como aplicación web ejecutada por la cuenta propietaria de la hoja y configura en sus propiedades `SPREADSHEET_ID`, `BRIDGE_TOKEN` y `EXAM_UNLOCK_PASSWORD`. En Vercel configura la URL de implementación, el mismo token, la clave de Gemini y la contraseña de desbloqueo. Ninguno de esos valores debe entrar al repositorio ni al navegador.
+El código y la configuración de `clasp` del puente están en `integrations/google-sheets-bridge`. La aplicación web ejecuta como la cuenta propietaria de la hoja y usa propiedades privadas `SPREADSHEET_ID`, `BRIDGE_TOKEN` y `EXAM_UNLOCK_PASSWORD`. En Vercel se configuran la URL de implementación, el mismo token y, para evaluar preguntas abiertas, `GEMINI_API_KEY` y `GEMINI_MODEL`. Sin clave de Gemini, esas preguntas quedan provisionales para revisión. Ningún secreto debe entrar al repositorio ni al navegador.
 
 La rama `main` conserva el código fuente y el despliegue de producción se publica en Vercel. Las variables sensibles se configuran en Vercel y no en el repositorio.

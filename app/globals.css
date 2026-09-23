@@ -252,6 +252,20 @@ h2 { margin-bottom: 0; color: #1b2a43; font-size: 1.2rem; letter-spacing: -.025e
 .danger-button { min-height: 44px; padding: 0 16px; border: 0; border-radius: 10px; color: #fff; background: #b74638; font: inherit; font-weight: 700; cursor: pointer; }
 .danger-button:disabled { opacity: .65; cursor: wait; }
 .admin-control-message { margin: 16px 0 0; padding: 12px 14px; border-radius: 10px; color: #6d382f; background: #fce9e5; line-height: 1.5; }
+.preview-tabs { display: flex; flex-wrap: wrap; gap: 9px; margin: 24px 0; }
+.preview-tabs .export-button { color: #355a75; cursor: pointer; }
+.teacher-preview .exam-questions { margin: 22px 0; }
+.preview-result { margin-top: 30px; padding-top: 24px; border-top: 1px solid var(--line); }
+.report-list { display: grid; gap: 8px; }
+.report-row { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) 110px 90px; align-items: center; gap: 14px; padding: 13px 16px; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--ink); text-align: left; cursor: pointer; }
+.report-row:hover { border-color: #a9d9ca; background: #fbfffd; }
+.report-row strong, .report-row small { display: block; }
+.report-row strong { font-size: .72rem; }
+.report-row small, .report-row > span:nth-child(2) { margin-top: 4px; color: var(--muted); font-size: .63rem; }
+.report-row b { justify-self: end; font-size: .72rem; }
+.report-detail { margin-top: 18px; padding: 22px; border: 1px solid #cae4dc; border-radius: 13px; background: #f9fdfa; }
+.report-detail > h3 { margin: 10px 0 5px; }
+.report-detail > p { color: var(--muted); font-size: .7rem; }
 
 @media (max-width: 950px) {
   .sidebar { width: 205px; flex-basis: 205px; }
@@ -300,4 +314,6 @@ h2 { margin-bottom: 0; color: #1b2a43; font-size: 1.2rem; letter-spacing: -.025e
   .exam-timer { flex: 0 0 auto; }
   .lock-panel form { grid-template-columns: 1fr; }
   .admin-revoke-form { grid-template-columns: 1fr; }
+  .report-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .report-row > span:nth-child(2) { display: none; }
 }
