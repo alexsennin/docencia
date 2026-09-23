@@ -274,7 +274,6 @@ function assertTeacherPassword_(password) {
 }
 
 function revokeExam_(payload) {
-  assertTeacherPassword_(payload.password);
   if (!payload.studentId || !payload.examId) throw new Error('Alumno y examen son obligatorios');
   var exam = rows_('EXAMENES').find(function(item) { return item.examen_id === payload.examId; });
   if (!exam) throw new Error('Examen no encontrado');

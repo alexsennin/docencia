@@ -25,7 +25,6 @@ export function AdminExamControls() {
   const [studentSearch, setStudentSearch] = useState("");
   const [studentId, setStudentId] = useState("");
   const [examId, setExamId] = useState("");
-  const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -108,20 +107,19 @@ export function AdminExamControls() {
 
   async function revoke(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedStudent || !selectedExam || !password) return;
+    if (!selectedStudent || !selectedExam) return;
     setIsSubmitting(true);
     setMessage("");
     try {
       const response = await fetch("/api/admin/revoke-exam", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ studentId, examId, password }),
+        body: JSON.stringify({ studentId, examId }),
       });
       const payload = await response.json() as { result?: { deletedAttempts?: number; deletedAnswers?: number; deletedAi?: number }; error?: string };
       if (!response.ok) throw new Error(payload.error || "No se pudo revocar el examen.");
       setMessage(`Se revocó “${selectedExam.examName}” para ${selectedStudent.studentName}. Se eliminaron ${payload.result?.deletedAttempts ?? 0} intento(s), ${payload.result?.deletedAnswers ?? 0} respuesta(s) y ${payload.result?.deletedAi ?? 0} evaluación(es) de IA. La asignación permanece activa para que pueda volver a presentarlo.`);
       setExamId("");
-      setPassword("");
       await loadCompletedAttempts();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "No se pudo revocar el examen.");
@@ -151,7 +149,6 @@ export function AdminExamControls() {
               setStudentSearch(event.target.value);
               setStudentId("");
               setExamId("");
-              setPassword("");
               setMessage("");
             }}
             placeholder="Escribe al menos 2 letras"
@@ -162,7 +159,7 @@ export function AdminExamControls() {
 
         <label className="select-field">
           <span>Seleccionar alumno</span>
-          <select value={studentId} onChange={(event) => { setStudentId(event.target.value); setExamId(""); setPassword(""); setMessage(""); }} disabled={students.length === 0}>
+          <select value={studentId} onChange={(event) => { setStudentId(event.target.value); setExamId(""); setMessage(""); }} disabled={students.length === 0}>
             <option value="">{studentSearch.trim().length < 2 ? "Escribe el nombre para buscar" : students.length ? "Elige un alumno" : "Sin coincidencias"}</option>
             {students.map((student) => (
               <option key={student.studentId} value={student.studentId}>
@@ -174,7 +171,7 @@ export function AdminExamControls() {
 
         <label className="select-field">
           <span>2. Examen realizado</span>
-          <select value={examId} onChange={(event) => { setExamId(event.target.value); setPassword(""); setMessage(""); }} disabled={!studentId || completedExams.length === 0}>
+          <select value={examId} onChange={(event) => { setExamId(event.target.value); setMessage(""); }} disabled={!studentId || completedExams.length === 0}>
             <option value="">{!studentId ? "Primero selecciona un alumno" : completedExams.length ? "Elige un examen entregado" : "No tiene exámenes realizados"}</option>
             {completedExams.map((exam) => (
               <option key={exam.examId} value={exam.examId}>
@@ -184,12 +181,7 @@ export function AdminExamControls() {
           </select>
         </label>
 
-        <label className="select-field">
-          <span>Contraseña docente</span>
-          <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Contraseña de autorización" autoComplete="current-password" disabled={!selectedExam} />
-        </label>
-
-        <button className="danger-button" type="submit" disabled={isSubmitting || !selectedExam || !password}>
+        <button className="danger-button" type="submit" disabled={isSubmitting || !selectedExam}>
           {isSubmitting ? "Revocando…" : "Revocar examen seleccionado"}
         </button>
       </form>
