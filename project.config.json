@@ -23,22 +23,92 @@
       {
         "sheetName": "PARCIALES",
         "role": "partial_definitions",
-        "columns": ["parcial_id", "nombre", "orden", "ciclo_escolar", "estado", "fecha_inicio", "fecha_cierre", "peso_asistencias", "peso_trabajos_clase", "peso_tareas", "peso_conducta", "peso_actitud", "peso_examen", "ponderacion_total", "created_at", "updated_at"]
+        "columns": ["parcial_id", "nombre", "orden", "ciclo_escolar", "materia", "estado", "fecha_inicio", "fecha_cierre", "peso_asistencias", "peso_trabajos_clase", "peso_tareas", "peso_evaluacion_continua", "peso_conducta", "peso_actitud", "peso_examen", "ponderacion_total", "created_at", "updated_at"]
       },
       {
         "sheetName": "EVALUACIONES",
         "role": "student_partial_evaluations",
-        "columns": ["evaluacion_id", "parcial_id", "alumno_id", "grupo", "asistencias", "trabajos_clase", "tareas", "conducta", "actitud", "examen", "calificacion_total", "estado", "observaciones", "updated_at"]
+        "columns": ["evaluacion_id", "parcial_id", "alumno_id", "grupo", "dias_clase", "faltas", "tareas_faltantes", "evaluacion_continua", "conducta", "actitud", "examen", "calificacion_parcial", "estado", "comentario_docente", "reporte_ai_estado", "innovat_estado", "updated_at"]
       },
       {
         "sheetName": "TAREAS",
         "role": "task_definitions",
-        "columns": ["tarea_id", "parcial_id", "nombre", "tipo", "fecha", "puntaje_maximo", "activa", "created_at"]
+        "columns": ["tarea_id", "parcial_id", "grupo", "nombre", "tipo", "fecha_asignacion", "fecha_entrega", "puntaje_maximo", "obligatoria", "activa", "created_at", "updated_at"]
       },
       {
         "sheetName": "CALIFICACIONES_TAREAS",
         "role": "student_task_scores",
-        "columns": ["registro_id", "tarea_id", "alumno_id", "grupo", "puntaje", "estado", "observaciones", "updated_at"]
+        "columns": ["registro_id", "tarea_id", "parcial_id", "alumno_id", "grupo", "entregada", "fecha_entrega", "puntaje", "estado", "observaciones", "updated_at"]
+      },
+      {
+        "sheetName": "CONFIG",
+        "role": "application_configuration",
+        "columns": ["clave", "valor", "descripcion", "editable", "updated_at"]
+      },
+      {
+        "sheetName": "SESIONES_CLASE",
+        "role": "class_sessions",
+        "columns": ["sesion_id", "parcial_id", "fecha_clase", "grupo", "materia", "tema", "estado", "observaciones", "registrado_por", "created_at", "updated_at"]
+      },
+      {
+        "sheetName": "ASISTENCIAS",
+        "role": "attendance_records",
+        "columns": ["asistencia_id", "sesion_id", "parcial_id", "alumno_id", "grupo", "fecha_clase", "estado", "observaciones", "registrado_por", "created_at", "updated_at"]
+      },
+      {
+        "sheetName": "CONDUCTA_ACTITUD",
+        "role": "conduct_attitude_records",
+        "columns": ["registro_id", "parcial_id", "alumno_id", "grupo", "fecha", "tipo", "observacion", "infraccion", "puntuacion", "rubrica_version", "estado", "registrado_por", "created_at", "updated_at"]
+      },
+      {
+        "sheetName": "EXAMENES",
+        "role": "exam_definitions",
+        "columns": ["examen_id", "parcial_id", "nombre", "materia", "grado", "grupo", "estado", "fecha_apertura", "fecha_cierre", "duracion_minutos", "puntaje_maximo", "requiere_pantalla_completa", "instrucciones", "created_at", "updated_at"]
+      },
+      {
+        "sheetName": "REACTIVOS",
+        "role": "exam_items",
+        "columns": ["reactivo_id", "examen_id", "orden", "tema", "tipo", "consigna", "opciones_json", "respuesta_correcta", "puntaje_maximo", "metodo_evaluacion", "rubrica", "activo", "created_at", "updated_at"]
+      },
+      {
+        "sheetName": "INTENTOS",
+        "role": "exam_attempts",
+        "columns": ["intento_id", "examen_id", "parcial_id", "alumno_id", "grupo", "estado", "inicio_at", "fin_at", "tiempo_limite_min", "puntaje_automatico", "puntaje_ai", "puntaje_total", "calificacion_10", "ai_pendiente", "bloqueo_activo", "created_at", "updated_at"]
+      },
+      {
+        "sheetName": "RESPUESTAS",
+        "role": "exam_answers",
+        "columns": ["respuesta_id", "intento_id", "reactivo_id", "alumno_id", "respuesta", "estado_respuesta", "puntaje_obtenido", "metodo_evaluacion", "retroalimentacion", "ai_estado", "updated_at"]
+      },
+      {
+        "sheetName": "EVALUACION_AI",
+        "role": "ai_item_evaluations",
+        "columns": ["evaluacion_ai_id", "intento_id", "reactivo_id", "modelo", "prompt_version", "entrada_json", "estado", "puntaje", "retroalimentacion", "desglose_json", "error", "ejecutado_at", "aprobado_at"]
+      },
+      {
+        "sheetName": "CALIFICACIONES",
+        "role": "published_partial_grades",
+        "columns": ["calificacion_id", "parcial_id", "alumno_id", "grupo", "dias_clase", "faltas", "tareas_faltantes", "evaluacion_continua", "conducta", "actitud", "examen", "calificacion_parcial", "calificacion_10", "estado", "comentario_docente", "reporte_ai_estado", "innovat_estado", "updated_at"]
+      },
+      {
+        "sheetName": "REPORTES_AI",
+        "role": "ai_feedback_reports",
+        "columns": ["reporte_id", "parcial_id", "alumno_id", "tipo", "estado", "resumen", "fortalezas", "areas_oportunidad", "recomendaciones_json", "evidencias_json", "visibilidad_alumno", "revisado_por", "revisado_at", "created_at", "updated_at"]
+      },
+      {
+        "sheetName": "INNOVAT_SALIDA",
+        "role": "innovat_export_queue",
+        "columns": ["export_id", "parcial_id", "alumno_id", "grupo", "payload_json", "estado", "intentos_envio", "respuesta_innovat", "error", "enviado_at", "updated_at"]
+      },
+      {
+        "sheetName": "EVENTOS",
+        "role": "audit_events",
+        "columns": ["evento_id", "tipo", "entidad", "entidad_id", "parcial_id", "alumno_id", "actor_id", "detalle_json", "ocurrido_at"]
+      },
+      {
+        "sheetName": "ACCESOS",
+        "role": "access_registry",
+        "columns": ["acceso_id", "rol", "alumno_id", "usuario_login", "estado", "debe_cambiar_credencial", "ultimo_acceso", "created_at", "updated_at"]
       }
     ]
   },
