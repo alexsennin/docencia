@@ -8,6 +8,13 @@
     "visibility": "private",
     "productionBranch": "main"
   },
+  "sheets": {
+    "spreadsheetId": "1YcnvSaHeIpZrbthI8rNOKIEJy0Z6QQ-06VCROS4Yh48",
+    "url": "https://docs.google.com/spreadsheets/d/1YcnvSaHeIpZrbthI8rNOKIEJy0Z6QQ-06VCROS4Yh48/edit",
+    "role": "database",
+    "sheetName": "Registros",
+    "timeZone": "America/Mexico_City"
+  },
   "vercel": {
     "teamId": "team_vBGSim0Om0qNR6PJXwpuSvow",
     "projectId": "prj_wSh9XtiSqi06lpUaQzg4hCUYPCeB",
