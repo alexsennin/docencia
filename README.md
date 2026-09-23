@@ -15,7 +15,7 @@ Cada parcial es independiente y puede contener cuatro componentes configurables:
 - `conducta` y `actitud`: valoración formativa y observaciones;
 - `examen`: calificación del instrumento correspondiente al parcial.
 
-Los pesos no se fijan por código: se guardarán en la configuración del parcial para que la docente pueda definirlos. La calificación total se calculará en servidor cuando exista el puente con Google Sheets y la autenticación docente.
+Los pesos no se fijan por código: se guardarán en la configuración del parcial para que la docente pueda definirlos. La calificación total se calculará en servidor cuando se conecte la consolidación de resultados con Google Sheets.
 
 ## Pestañas de datos
 
@@ -46,6 +46,12 @@ npm run lint
 npm run build
 ```
 
+## Acceso docente
+
+La ruta principal solicita una única contraseña en `/docente/ingresar`. Una sesión firmada en una cookie `HttpOnly`, `Secure` y `SameSite=Strict` protege el panel y las rutas administrativas durante ocho horas. El botón `Salir` cierra la sesión del navegador. `/alumno` permanece disponible para el acceso por ID.
+
+Configura `TEACHER_PASSWORD` y `TEACHER_SESSION_SECRET` como variables sensibles de Production en Vercel. La primera contiene la clave compartida para iniciar sesión; la segunda debe ser un valor aleatorio de al menos 32 bytes. No incluyas ninguna de las dos en Git ni en variables `NEXT_PUBLIC_`.
+
 ## Exámenes digitales
 
 La vista de alumno está en `/alumno`. Los tres exámenes publicados se normalizaron a 100 puntos, con máximo de 50 minutos, reactivos cerrados de autocalificación y reactivos abiertos pendientes de IA/revisión docente. La previa local reconoce `DEMO-1`, `DEMO-2` y `DEMO-3`; los IDs reales sólo se habilitan cuando `GOOGLE_SHEETS_BRIDGE_URL` y `GOOGLE_SHEETS_BRIDGE_TOKEN` están configurados en Vercel.
@@ -54,4 +60,4 @@ El panel docente incluye `Revocar examen`. La operación requiere la contraseña
 
 Para activar persistencia real, despliega `integrations/google-sheets-bridge/Code.gs` como aplicación web ejecutada por la cuenta propietaria de la hoja y configura en sus propiedades `SPREADSHEET_ID`, `BRIDGE_TOKEN` y `EXAM_UNLOCK_PASSWORD`. En Vercel configura la URL de implementación, el mismo token, la clave de Gemini y la contraseña de desbloqueo. Ninguno de esos valores debe entrar al repositorio ni al navegador.
 
-El despliegue de producción se realizará desde la rama `main` en Vercel. Las variables sensibles, cuando se agreguen, deben configurarse en Vercel y no en el repositorio.
+La rama `main` conserva el código fuente y el despliegue de producción se publica en Vercel. Las variables sensibles se configuran en Vercel y no en el repositorio.

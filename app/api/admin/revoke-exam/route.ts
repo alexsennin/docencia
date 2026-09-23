@@ -1,8 +1,10 @@
 import { hasSheetsBridge, sheetsBridge } from "../../../../lib/sheets-bridge";
+import { hasTeacherSession } from "../../../../lib/teacher-auth";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
+  if (!(await hasTeacherSession())) return Response.json({ error: "Inicia sesión como docente." }, { status: 401 });
   try {
     const payload = await request.json() as { studentId?: string; examId?: string; password?: string };
     if (!payload.studentId?.trim() || !payload.examId?.trim() || !payload.password) {
