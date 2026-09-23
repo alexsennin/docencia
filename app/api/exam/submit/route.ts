@@ -35,7 +35,13 @@ async function evaluateAi_(exam: Parameters<typeof evaluateAutomatic>[0], answer
       const ai = await evaluateOpenWithGemini(exam, question, answer);
       if (ai) {
         const item = result.items.find((candidate) => candidate.questionId === question.id);
-        if (item) { item.score = Math.max(0, Math.min(question.maxScore, Number(ai.score) || 0)); item.status = "correcta"; item.feedback = ai.feedback || "Evaluación generada por IA."; }
+      if (item) {
+        item.score = Math.max(0, Math.min(question.maxScore, Number(ai.score) || 0));
+        item.status = "correcta";
+        item.feedback = ai.feedback || "Evaluación generada por IA.";
+        item.strengths = Array.isArray(ai.strengths) ? ai.strengths : [];
+        item.opportunities = Array.isArray(ai.opportunities) ? ai.opportunities : [];
+      }
       }
     } catch {
       // Keep the item pending so the teacher can review it rather than inventing a grade.

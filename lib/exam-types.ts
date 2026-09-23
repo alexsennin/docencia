@@ -63,6 +63,8 @@ export type ItemResult = {
   score: number | null;
   status: "correcta" | "incorrecta" | "sin_respuesta" | "pendiente_ia";
   feedback: string;
+  strengths?: string[];
+  opportunities?: string[];
 };
 
 export type ExamResult = {
