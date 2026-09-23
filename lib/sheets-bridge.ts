@@ -17,10 +17,8 @@ export async function sheetsBridge<T>(action: string, payload: Record<string, un
   const redirectLocation = response.headers.get("location");
   if (redirectLocation && [301, 302, 303, 307, 308].includes(response.status)) {
     response = await fetch(new URL(redirectLocation, url), {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: requestBody,
-      redirect: "manual",
+      method: "GET",
+      redirect: "follow",
       cache: "no-store",
     });
   }
