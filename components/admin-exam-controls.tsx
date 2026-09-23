@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ProgressOverlay } from "./progress-overlay";
 
 const exams = [
   { id: "exam-1-esp-1", label: "1.º grado · Cazadores de Greenwashing" },
@@ -53,6 +54,7 @@ export function AdminExamControls() {
         <button className="danger-button" type="submit" disabled={isSubmitting}>{isSubmitting ? "Revocando…" : "Revocar examen"}</button>
       </form>
       {message && <p className="admin-control-message" role="status">{message}</p>}
+      {isSubmitting && <ProgressOverlay title="Revocando examen…" detail="Eliminamos el intento y sus respuestas para permitir una nueva presentación." />}
     </section>
   );
 }
