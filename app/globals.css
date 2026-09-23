@@ -248,12 +248,27 @@ h2 { margin-bottom: 0; color: #1b2a43; font-size: 1.2rem; letter-spacing: -.025e
 .admin-control-badge { display: inline-flex; align-items: center; padding: 7px 11px; border-radius: 999px; color: #8c3f34; background: #fce9e5; font-size: 12px; font-weight: 700; }
 .admin-control-description { max-width: 780px; margin: -8px 0 18px; color: #667085; line-height: 1.6; }
 .admin-revoke-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: end; }
+.admin-revoke-form .select-field > span, .admin-revoke-form .select-field > label { color: var(--muted); font-size: .75rem; font-weight: 700; }
 .admin-revoke-form .select-field input, .admin-revoke-form .select-field select { width: 100%; min-height: 44px; padding: 0 12px; border: 1px solid #d8dee8; border-radius: 10px; background: #fff; color: #182230; font: inherit; }
 .admin-revoke-form .select-field input:disabled, .admin-revoke-form .select-field select:disabled { color: #8a98a9; background: #f5f7fa; cursor: not-allowed; }
+.revoke-student-combobox { position: relative; }
+.revoke-student-options { position: absolute; z-index: 5; top: calc(100% + 5px); right: 0; left: 0; max-height: 260px; overflow-y: auto; padding: 5px; border: 1px solid #d8dee8; border-radius: 12px; background: #fff; box-shadow: 0 14px 34px #18223024; }
+.revoke-student-option { display: grid; width: 100%; gap: 3px; padding: 10px 12px; border: 0; border-radius: 8px; background: transparent; color: #182230; text-align: left; cursor: pointer; }
+.revoke-student-option:hover, .revoke-student-option[aria-selected="true"] { background: #f2f6fa; }
+.revoke-student-option strong { font-size: .9rem; }
+.revoke-student-option span, .revoke-student-empty, .revoke-selected-student { color: #667085; font-size: .78rem; }
+.revoke-student-empty { margin: 0; padding: 12px; }
+.revoke-selected-student { line-height: 1.4; }
 .danger-button { min-height: 44px; padding: 0 16px; border: 0; border-radius: 10px; color: #fff; background: #b74638; font: inherit; font-weight: 700; cursor: pointer; }
 .danger-button:disabled { opacity: .65; cursor: wait; }
 .admin-control-message { margin: 16px 0 0; padding: 12px 14px; border-radius: 10px; color: #6d382f; background: #fce9e5; line-height: 1.5; }
 .admin-control-hint { margin: 12px 0 0; color: #667085; font-size: .9rem; line-height: 1.5; }
+.revoke-confirm-backdrop { position: fixed; z-index: 30; inset: 0; display: grid; place-items: center; padding: 20px; background: #10182899; }
+.revoke-confirm-dialog { width: min(100%, 500px); padding: 26px; border: 1px solid #e4e7ec; border-radius: 18px; background: #fff; box-shadow: 0 24px 70px #10182840; }
+.revoke-confirm-dialog h3 { margin: 4px 0 12px; color: #182230; font-size: 1.35rem; }
+.revoke-confirm-dialog p { color: #475467; line-height: 1.55; }
+.revoke-confirm-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+.revoke-cancel-button { min-height: 44px; padding: 0 16px; border: 1px solid #d0d5dd; border-radius: 10px; background: #fff; color: #344054; font: inherit; font-weight: 650; cursor: pointer; }
 .gemini-settings { border-color: #d6e7f2; background: linear-gradient(135deg, #f7fbff 0%, #fff 70%); }
 .gemini-settings .section-heading h2 { color: #203a57; }
 .gemini-ready { color: #216b57; background: #e4f5ee; }

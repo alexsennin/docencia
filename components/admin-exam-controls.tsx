@@ -23,10 +23,12 @@ export function AdminExamControls() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [studentSearch, setStudentSearch] = useState("");
+  const [isStudentSearchOpen, setIsStudentSearchOpen] = useState(false);
   const [studentId, setStudentId] = useState("");
   const [examId, setExamId] = useState("");
   const [message, setMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isConfirming, setIsConfirming] = useState(false);
 
   async function loadCompletedAttempts() {
     setIsLoading(true);
@@ -108,6 +110,12 @@ export function AdminExamControls() {
   async function revoke(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedStudent || !selectedExam) return;
+    setIsConfirming(true);
+  }
+
+  async function confirmRevocation() {
+    if (!selectedStudent || !selectedExam) return;
+    setIsConfirming(false);
     setIsSubmitting(true);
     setMessage("");
     try {
@@ -140,34 +148,68 @@ export function AdminExamControls() {
       <p className="admin-control-description">Busca al alumno por nombre y elige uno de sus exámenes entregados. Se borrarán los intentos y respuestas de ese examen; la asignación seguirá activa para que pueda presentarlo nuevamente.</p>
 
       <form className="admin-revoke-form" onSubmit={revoke}>
-        <label className="select-field">
-          <span>1. Buscar alumno por nombre</span>
-          <input
-            type="search"
-            value={studentSearch}
-            onChange={(event) => {
-              setStudentSearch(event.target.value);
-              setStudentId("");
-              setExamId("");
-              setMessage("");
-            }}
-            placeholder="Escribe al menos 2 letras"
-            autoComplete="off"
-            aria-label="Buscar alumno por nombre"
-          />
-        </label>
-
-        <label className="select-field">
-          <span>Seleccionar alumno</span>
-          <select value={studentId} onChange={(event) => { setStudentId(event.target.value); setExamId(""); setMessage(""); }} disabled={students.length === 0}>
-            <option value="">{studentSearch.trim().length < 2 ? "Escribe el nombre para buscar" : students.length ? "Elige un alumno" : "Sin coincidencias"}</option>
-            {students.map((student) => (
-              <option key={student.studentId} value={student.studentId}>
-                {student.studentName} · {student.grade} {student.group} · {student.studentId}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="select-field revoke-student-search">
+          <label htmlFor="revoke-student-name">1. Buscar y seleccionar alumno</label>
+          <div className="revoke-student-combobox">
+            <input
+              id="revoke-student-name"
+              type="search"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded={isStudentSearchOpen && studentSearch.trim().length >= 2}
+              aria-controls="revoke-student-options"
+              value={studentSearch}
+              onFocus={() => setIsStudentSearchOpen(true)}
+              onBlur={() => setIsStudentSearchOpen(false)}
+              onChange={(event) => {
+                setStudentSearch(event.target.value);
+                setStudentId("");
+                setExamId("");
+                setMessage("");
+                setIsStudentSearchOpen(true);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") setIsStudentSearchOpen(false);
+                if (event.key === "Enter" && isStudentSearchOpen && students.length === 1) {
+                  event.preventDefault();
+                  const student = students[0];
+                  setStudentId(student.studentId);
+                  setStudentSearch(student.studentName);
+                  setExamId("");
+                  setIsStudentSearchOpen(false);
+                }
+              }}
+              placeholder="Escribe el nombre del alumno"
+              autoComplete="off"
+              aria-label="Buscar y seleccionar alumno por nombre"
+            />
+            {isStudentSearchOpen && studentSearch.trim().length >= 2 && (
+              <div className="revoke-student-options" id="revoke-student-options" role="listbox" aria-label="Alumnos encontrados">
+                {students.length ? students.map((student) => (
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={student.studentId === studentId}
+                    className="revoke-student-option"
+                    key={student.studentId}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => {
+                      setStudentId(student.studentId);
+                      setStudentSearch(student.studentName);
+                      setExamId("");
+                      setMessage("");
+                      setIsStudentSearchOpen(false);
+                    }}
+                  >
+                    <strong>{student.studentName}</strong>
+                    <span>{student.grade} {student.group} · ID {student.studentId}</span>
+                  </button>
+                )) : <p className="revoke-student-empty">No hay alumnos con exámenes entregados que coincidan.</p>}
+              </div>
+            )}
+          </div>
+          {selectedStudent && <small className="revoke-selected-student">Seleccionado: {selectedStudent.studentName} · {selectedStudent.grade} {selectedStudent.group}</small>}
+        </div>
 
         <label className="select-field">
           <span>2. Examen realizado</span>
@@ -191,6 +233,20 @@ export function AdminExamControls() {
       {!isLoading && !loadError && attempts.length === 0 && <p className="admin-control-hint">Aún no hay exámenes entregados para revocar.</p>}
       {selectedExam && <p className="admin-control-hint">Se encontraron {selectedExam.attempts.length} intento(s) entregados de este examen. La revocación los eliminará todos junto con sus respuestas y evaluaciones de IA.</p>}
       {message && <p className="admin-control-message" role="status">{message}</p>}
+      {isConfirming && selectedStudent && selectedExam && (
+        <div className="revoke-confirm-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setIsConfirming(false); }}>
+          <section className="revoke-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="revoke-confirm-title" aria-describedby="revoke-confirm-description">
+            <p className="eyebrow">CONFIRMACIÓN</p>
+            <h3 id="revoke-confirm-title">¿Revocar este examen?</h3>
+            <p id="revoke-confirm-description"><strong>{selectedStudent.studentName}</strong> · {selectedExam.examName}</p>
+            <p>Se eliminarán los {selectedExam.attempts.length} intento(s) entregados, sus respuestas y calificaciones, incluidas las evaluaciones de IA. La asignación seguirá activa para que el alumno pueda volver a hacer el examen.</p>
+            <div className="revoke-confirm-actions">
+              <button className="revoke-cancel-button" type="button" onClick={() => setIsConfirming(false)}>Cancelar</button>
+              <button className="danger-button" type="button" onClick={() => void confirmRevocation()} disabled={isSubmitting}>Sí, revocar examen</button>
+            </div>
+          </section>
+        </div>
+      )}
       {isSubmitting && <ProgressOverlay title="Revocando examen…" detail="Verificamos el alumno y borramos sólo sus intentos entregados del examen seleccionado." />}
     </section>
   );
