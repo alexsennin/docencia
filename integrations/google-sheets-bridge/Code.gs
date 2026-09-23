@@ -127,6 +127,11 @@ function testGeminiConnection_() {
   return { connected: true, model: model };
 }
 
+function authorizeGeminiConnection() {
+  UrlFetchApp.getRequest('https://generativelanguage.googleapis.com');
+  return { authorizationReady: true };
+}
+
 function evaluateOpenAnswer_(payload) {
   var examResult = getExamDefinition_(payload.examId);
   var exam = examResult.exam;
