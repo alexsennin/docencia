@@ -1,0 +1,24 @@
+{
+  "projectName": "Docencia",
+  "slug": "docencia",
+  "productionUrl": "https://docencia.integratech.app",
+  "github": {
+    "repository": "alexsennin/docencia",
+    "url": "https://github.com/alexsennin/docencia",
+    "visibility": "private",
+    "productionBranch": "main"
+  },
+  "vercel": {
+    "teamId": "team_vBGSim0Om0qNR6PJXwpuSvow",
+    "projectId": "prj_wSh9XtiSqi06lpUaQzg4hCUYPCeB",
+    "dashboardUrl": "https://vercel.com/alex-sennin/docencia",
+    "productionUrl": "https://docencia-eosin.vercel.app"
+  },
+  "dns": {
+    "provider": "Vercel",
+    "zoneName": "integratech.app",
+    "hostname": "docencia.integratech.app",
+    "recordType": "A/CNAME via Vercel DNS",
+    "nameservers": ["ns1.vercel-dns.com", "ns2.vercel-dns.com"]
+  }
+}

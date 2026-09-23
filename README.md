@@ -1,6 +1,8 @@
 # Docencia
 
-Base inicial para `docencia.integratech.app`.
+Base inicial para [`docencia.integratech.app`](https://docencia.integratech.app).
+
+El repositorio es privado en GitHub y el proyecto de Vercel usa la rama `main` como referencia de producción. El dominio `integratech.app` usa los nameservers de Vercel; no se modificaron registros ajenos a este proyecto.
 
 ## Desarrollo
 
