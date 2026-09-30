@@ -33,10 +33,10 @@
 
 ## DEC-004 — Adoptar ALEX DEVELOPMENT STANDARD v1.0 con memoria en `project-methodology/`
 
-- **Fecha / estado:** 2026-09-30 · Aceptada para esta fase; adopción completa pendiente del piloto.
+- **Fecha / estado:** 2026-09-30 · Aceptada; adopción documental y piloto DOC-001 completados.
 - **Contexto:** futuros agentes necesitan contexto persistente y cierre trazable sin depender de conversaciones.
 - **Opciones consideradas:** conservar sólo memoria de chat; copiar íntegro el estándar; adoptar sus responsabilidades y enlazar la fuente.
 - **Decisión y razón:** mantener documentos propios del proyecto bajo `project-methodology/`, enlazar la metodología canónica y no copiarla ni imponer su stack, herramientas o identidad visual.
-- **Consecuencias:** la primera versión de adopción había dejado los documentos específicos del producto en la raíz; esta corrección los reubica a la estructura indicada por v1.0, elimina la duplicación y mantiene `AGENTS.md` como puerta de entrada. No se declara adopción completa hasta ejecutar un piloto y revisar su resultado.
-- **Alcance / revisión:** documentación del repositorio Docencia. Revisar tras el piloto o cuando cambie la fuente/versionado del estándar.
+- **Consecuencias:** la primera versión de adopción había dejado los documentos específicos del producto en la raíz; esta corrección los reubicó a la estructura indicada por v1.0, eliminó la duplicación y mantiene `AGENTS.md` como puerta de entrada. El piloto DOC-001 comparó los encabezados vivos de Sheets y marcó las tablas antiguas de `project.config.json` como no autoritativas; la adopción documental queda completada sin despliegue ni cambio funcional.
+- **Alcance / revisión:** documentación del repositorio Docencia. Revisar si cambia la fuente/versionado del estándar o si una tarea futura evidencia que la guía local ya no cumple el método.
 - **Referencia exacta consultada:** `alexsennin/alex-development-standard/standards/v1.0/`, commit `e0c356e219771cbab456fed8e52aa6a86f40a70d`.

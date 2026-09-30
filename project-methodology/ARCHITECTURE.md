@@ -28,7 +28,7 @@ Navegador
 
 `Docencia` usa zona `America/Mexico_City`. La hoja viva tiene 20 pestañas: padrón/configuración, parciales, sesiones, asistencia, tareas, conducta/actitud, exámenes, intentos/respuestas, evaluaciones, reportes, auditoría y salida Innovat. Sus nombres y encabezados se leyeron el 2026-09-30; no se leyeron datos de alumnos.
 
-`project.config.json` describe una versión anterior del esquema: faltan columnas agregadas en varias pestañas y la pestaña `EXAMEN_ASIGNACIONES`. La búsqueda del repositorio no encontró código que consuma ese archivo. No lo uses para construir escrituras ni cambies la hoja basándote en él; ver tarea `DOC-001`.
+`project.config.json` conserva una versión anterior del esquema. El 2026-09-30 se comparó su lista con los encabezados actuales de las 20 pestañas; faltan `EXAMEN_ASIGNACIONES` y columnas añadidas en varias tablas. La búsqueda del repositorio no encontró código que consuma ese archivo. `sheets.schemaStatus` lo marca como `historical_non_authoritative`; no lo uses para operaciones basadas en esquema ni cambies la hoja basándote en él.
 
 ### Flujos de producto
 

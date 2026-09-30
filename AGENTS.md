@@ -36,11 +36,11 @@ Antes de trabajar, lee:
 - `project-methodology/TODO.md`
 - `project-methodology/DECISIONS.md`
 
-Para UI, lee también `project-methodology/design/`. La fase documental inicial está registrada; no declares la adopción completa hasta terminar el piloto descrito en `project-methodology/TODO.md`.
+Para UI, lee también `project-methodology/design/`. La adopción de ALEX DEVELOPMENT STANDARD v1.0 y su piloto de Nivel 1 (`DOC-001`) quedaron completados el 2026-09-30; consulta `project-methodology/PROJECT_STATE.md` para el alcance y la evidencia. Esto no autoriza cambios en Producción.
 
 ## Reglas propias del proyecto
 
-- La referencia operativa es Producción en `https://docencia.integratech.app`; la hoja `Docencia` de Google Sheets es la fuente operativa de datos. `project.config.json` no se usa desde código y su esquema declarado diverge de los encabezados vivos observados; confirma la hoja antes de tratarlo como esquema.
+- La referencia operativa es Producción en `https://docencia.integratech.app`; la hoja `Docencia` de Google Sheets es la fuente operativa de datos. `project.config.json` no se usa desde código y su esquema está marcado histórico/no autoritativo; consulta los encabezados de la hoja viva antes de basar operaciones en un esquema.
 - El árbol local y `origin/main` no necesariamente representan lo desplegado. El usuario pidió trabajar directamente en Producción y pausar GitHub; su instrucción del 2026-09-30 autoriza una rama, commits y push exclusivamente para esta adopción documental. No incluyas cambios funcionales preexistentes, no mergees ni despliegues. Para cualquier otro trabajo, no crees commits, ramas remotas, PR ni pushes sin una nueva instrucción explícita. No despliegues cambios documentales.
 - El acceso estudiantil por ID se conserva temporalmente por instrucción del usuario. No lo cambies como parte de otra tarea; registra el riesgo y espera una solicitud específica para cambiar esa decisión.
 - Toda acción iniciada por el usuario que consulte o escriba Apps Script, Google Sheets, Gemini u otro servicio remoto debe seguir la regla `ProgressOverlay` al inicio de este archivo. El autoguardado de exámenes conserva su estado visible en línea y el envío mantiene su pantalla de evaluación.

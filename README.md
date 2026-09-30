@@ -27,4 +27,4 @@ Consulta [AGENTS.md](AGENTS.md) antes de trabajar. La memoria específica del pr
 - [Decisiones](project-methodology/DECISIONS.md)
 - [Diseño](project-methodology/design/)
 
-Este proyecto adopta [ALEX DEVELOPMENT STANDARD v1.0](https://github.com/alexsennin/alex-development-standard/tree/main/standards/v1.0). La fuente canónica es de solo lectura; la documentación del producto vive en `project-methodology/`. La adopción documental queda pendiente de una tarea piloto de bajo riesgo.
+Este proyecto adopta [ALEX DEVELOPMENT STANDARD v1.0](https://github.com/alexsennin/alex-development-standard/tree/main/standards/v1.0). La fuente canónica es de solo lectura; la documentación del producto vive en `project-methodology/`. La adopción se completó con el piloto de Nivel 1 DOC-001, documentado en el estado del proyecto.

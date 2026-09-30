@@ -33,11 +33,11 @@ Docencia apoya el trabajo de una docente de Español de secundaria y permite a s
 - `components/`: portal del alumno, panel docente, captura académica, rúbrica y exámenes.
 - `lib/`: cálculo académico, tipos, autenticación docente y cliente servidor del puente.
 - `integrations/google-sheets-bridge/Code.gs`: aplicación Apps Script que lee/escribe la hoja y llama Gemini.
-- `project.config.json`: manifiesto descriptivo del proyecto; no tiene referencias desde el código. Su esquema de columnas necesita reconciliarse con los encabezados vivos.
+- `project.config.json`: manifiesto descriptivo sin referencias encontradas desde el código. Sus definiciones `sheets.tables` se compararon con los encabezados vivos el 2026-09-30 y quedaron marcadas como históricas/no autoritativas; no las uses para operaciones sobre Sheets.
 - `tests/`: directorio de pruebas Node que existe en este checkout sucio; no está en `origin/main` ni en el commit documental.
 
 ## Contexto persistente
 
 Lee [PROJECT_STATE.md](PROJECT_STATE.md) para el estado actual; [ARCHITECTURE.md](ARCHITECTURE.md) para contratos y flujos; [TODO.md](TODO.md) para trabajo futuro; y [DECISIONS.md](DECISIONS.md) para decisiones duraderas. Para UI, consulta [design/](design/).
 
-La memoria específica del producto está en `project-methodology/`. ALEX DEVELOPMENT STANDARD v1.0 es la metodología central de sólo lectura: se consultó en `alexsennin/alex-development-standard`, `standards/v1.0/`, commit `e0c356e219771cbab456fed8e52aa6a86f40a70d`. No se copian sus documentos normativos. La adopción completa queda pendiente del piloto descrito en [TODO.md](TODO.md).
+La memoria específica del producto está en `project-methodology/`. ALEX DEVELOPMENT STANDARD v1.0 es la metodología central de sólo lectura: se consultó en `alexsennin/alex-development-standard`, `standards/v1.0/`, commit `e0c356e219771cbab456fed8e52aa6a86f40a70d`. No se copian sus documentos normativos. La adopción se completó con el piloto DOC-001, según el registro de [PROJECT_STATE.md](PROJECT_STATE.md).
