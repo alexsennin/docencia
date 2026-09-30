@@ -1,6 +1,6 @@
 # Tokens visuales implementados
 
-Fuente: variables CSS de `:root` en `app/globals.css`. Estos valores existen en el código; no se encontró una guía de marca que los declare identidad aprobada.
+Fuente: variables CSS de `:root` en [`app/globals.css`](../../app/globals.css). Estos valores existen en el código; no se encontró una guía de marca que los declare identidad aprobada.
 
 | Variable | Valor | Uso observado |
 | --- | --- | --- |
@@ -22,4 +22,4 @@ Fuente: variables CSS de `:root` en `app/globals.css`. Estos valores existen en 
 
 Tipografía del cuerpo: `Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`.
 
-Observación: hay colores y medidas adicionales literales en `globals.css`; esta lista no implica que sean tokens ni que deban copiarse para componentes nuevos. No se cambian valores durante la adopción documental.
+Observación: hay colores y medidas adicionales literales en `app/globals.css`; esta lista no implica que sean tokens ni que deban copiarse para componentes nuevos. No se cambian valores durante la adopción documental.

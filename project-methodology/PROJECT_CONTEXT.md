@@ -34,10 +34,10 @@ Docencia apoya el trabajo de una docente de Español de secundaria y permite a s
 - `lib/`: cálculo académico, tipos, autenticación docente y cliente servidor del puente.
 - `integrations/google-sheets-bridge/Code.gs`: aplicación Apps Script que lee/escribe la hoja y llama Gemini.
 - `project.config.json`: manifiesto descriptivo del proyecto; no tiene referencias desde el código. Su esquema de columnas necesita reconciliarse con los encabezados vivos.
-- `tests/`: pruebas Node para el motor académico.
+- `tests/`: directorio de pruebas Node que existe en este checkout sucio; no está en `origin/main` ni en el commit documental.
 
 ## Contexto persistente
 
-Lee `PROJECT_STATE.md` para el estado actual; `ARCHITECTURE.md` para contratos y flujos; `TODO.md` para trabajo futuro; `DECISIONS.md` para decisiones duraderas. Para diseño visual, consulta `DESIGN_SYSTEM.md` y `TOKENS.md`.
+Lee [PROJECT_STATE.md](PROJECT_STATE.md) para el estado actual; [ARCHITECTURE.md](ARCHITECTURE.md) para contratos y flujos; [TODO.md](TODO.md) para trabajo futuro; y [DECISIONS.md](DECISIONS.md) para decisiones duraderas. Para UI, consulta [design/](design/).
 
-Este repositorio adopta la fase documental inicial de [ALEX DEVELOPMENT STANDARD v1.0](https://github.com/alexsennin/alex-development-standard/tree/main/standards/v1.0), revisada en el commit `4c59d51e2d5b7b667606d15c63514be29820ddbe`. No se copia el estándar. La adopción completa queda pendiente del piloto descrito en `TODO.md`.
+La memoria específica del producto está en `project-methodology/`. ALEX DEVELOPMENT STANDARD v1.0 es la metodología central de sólo lectura: se consultó en `alexsennin/alex-development-standard`, `standards/v1.0/`, commit `e0c356e219771cbab456fed8e52aa6a86f40a70d`. No se copian sus documentos normativos. La adopción completa queda pendiente del piloto descrito en [TODO.md](TODO.md).

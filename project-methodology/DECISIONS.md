@@ -31,12 +31,12 @@
 - **Alcance / revisión:** acceso del alumno y datos que se muestran a través de él. Revisar antes de ampliar el tipo o sensibilidad de la información expuesta, o cuando el usuario solicite otro mecanismo.
 - **Referencias:** `app/api/access/route.ts`, `AGENTS.md`, `PROJECT_CONTEXT.md`.
 
-## DEC-004 — Adopción documental inicial de ALEX DEVELOPMENT STANDARD v1.0
+## DEC-004 — Adoptar ALEX DEVELOPMENT STANDARD v1.0 con memoria en `project-methodology/`
 
 - **Fecha / estado:** 2026-09-30 · Aceptada para esta fase; adopción completa pendiente del piloto.
 - **Contexto:** futuros agentes necesitan contexto persistente y cierre trazable sin depender de conversaciones.
 - **Opciones consideradas:** conservar sólo memoria de chat; copiar íntegro el estándar; adoptar sus responsabilidades y enlazar la fuente.
-- **Decisión y razón:** mantener documentos de proyecto propios y enlazar ALEX v1.0 sin copiarlo ni imponer su stack, carpetas o herramientas.
-- **Consecuencias:** esta fase crea contexto, estado, arquitectura, tareas, decisiones y referencia de diseño. Según el estándar, no se declara adopción completa hasta ejecutar un piloto y revisar su resultado.
+- **Decisión y razón:** mantener documentos propios del proyecto bajo `project-methodology/`, enlazar la metodología canónica y no copiarla ni imponer su stack, herramientas o identidad visual.
+- **Consecuencias:** la primera versión de adopción había dejado los documentos específicos del producto en la raíz; esta corrección los reubica a la estructura indicada por v1.0, elimina la duplicación y mantiene `AGENTS.md` como puerta de entrada. No se declara adopción completa hasta ejecutar un piloto y revisar su resultado.
 - **Alcance / revisión:** documentación del repositorio Docencia. Revisar tras el piloto o cuando cambie la fuente/versionado del estándar.
-- **Referencia exacta consultada:** `alexsennin/alex-development-standard/standards/v1.0/`, commit `4c59d51e2d5b7b667606d15c63514be29820ddbe`.
+- **Referencia exacta consultada:** `alexsennin/alex-development-standard/standards/v1.0/`, commit `e0c356e219771cbab456fed8e52aa6a86f40a70d`.

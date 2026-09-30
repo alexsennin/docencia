@@ -16,16 +16,32 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 <!-- END:nextjs-agent-rules -->
 
-## Estándar de desarrollo
+## Metodología y puerta de entrada
 
-Este repositorio adopta la fase documental inicial de **ALEX DEVELOPMENT STANDARD v1.0**. La adopción completa queda pendiente de ejecutar y revisar un piloto autorizado. Referencia normativa: [alexsennin/alex-development-standard/standards/v1.0](https://github.com/alexsennin/alex-development-standard/tree/main/standards/v1.0). No copies el estándar a este repositorio ni declares cumplimiento total sólo por tener estos documentos.
+Este proyecto adopta **ALEX DEVELOPMENT STANDARD v1.0**.
 
-Antes de una tarea, lee `PROJECT_CONTEXT.md`, `PROJECT_STATE.md`, `ARCHITECTURE.md`, `TODO.md` y `DECISIONS.md`; para cambios visuales lee también `DESIGN_SYSTEM.md` y `TOKENS.md`. Comprueba rama, `git status`, diff, remoto y commits pertinentes. Contrasta la documentación con el código y el destino específico de la tarea. Conserva cambios preexistentes: no uses `reset`, `restore`, `clean`, `stash` ni `checkout` de forma que los descartes.
+- `SOURCE_REPO`: `alexsennin/alex-development-standard`
+- `SOURCE_VERSION`: `standards/v1.0/`
+- `TARGET_REPO`: `alexsennin/docencia`
+- `TARGET_ROOT`: raíz de este checkout
+- `TARGET_METHODOLOGY_DIR`: `project-methodology/`
+
+La metodología central es únicamente de lectura durante las adopciones; su fuente autoritativa es el [repositorio ALEX](https://github.com/alexsennin/alex-development-standard/tree/main/standards/v1.0/). No copies ni adaptes sus documentos normativos dentro de Docencia. La memoria específica del producto vive en `project-methodology/`.
+
+Antes de trabajar, lee:
+
+- `project-methodology/PROJECT_CONTEXT.md`
+- `project-methodology/PROJECT_STATE.md`
+- `project-methodology/ARCHITECTURE.md`
+- `project-methodology/TODO.md`
+- `project-methodology/DECISIONS.md`
+
+Para UI, lee también `project-methodology/design/`. La fase documental inicial está registrada; no declares la adopción completa hasta terminar el piloto descrito en `project-methodology/TODO.md`.
 
 ## Reglas propias del proyecto
 
 - La referencia operativa es Producción en `https://docencia.integratech.app`; la hoja `Docencia` de Google Sheets es la fuente operativa de datos. `project.config.json` no se usa desde código y su esquema declarado diverge de los encabezados vivos observados; confirma la hoja antes de tratarlo como esquema.
-- El árbol local y `origin/main` no necesariamente representan lo desplegado. El usuario pidió trabajar directamente en Producción y pausar GitHub; su instrucción del 2026-09-30 autoriza una rama, commit y push exclusivamente para esta adopción documental. No incluyas cambios funcionales preexistentes, no mergees ni despliegues. Para cualquier otro trabajo, no crees commits, ramas remotas, PR ni pushes sin una nueva instrucción explícita. No despliegues cambios documentales.
+- El árbol local y `origin/main` no necesariamente representan lo desplegado. El usuario pidió trabajar directamente en Producción y pausar GitHub; su instrucción del 2026-09-30 autoriza una rama, commits y push exclusivamente para esta adopción documental. No incluyas cambios funcionales preexistentes, no mergees ni despliegues. Para cualquier otro trabajo, no crees commits, ramas remotas, PR ni pushes sin una nueva instrucción explícita. No despliegues cambios documentales.
 - El acceso estudiantil por ID se conserva temporalmente por instrucción del usuario. No lo cambies como parte de otra tarea; registra el riesgo y espera una solicitud específica para cambiar esa decisión.
 - Toda acción iniciada por el usuario que consulte o escriba Apps Script, Google Sheets, Gemini u otro servicio remoto debe seguir la regla `ProgressOverlay` al inicio de este archivo. El autoguardado de exámenes conserva su estado visible en línea y el envío mantiene su pantalla de evaluación.
 - Mantén secretos en variables sensibles de Vercel o Script Properties de Apps Script. No copies filas de alumnos, calificaciones, credenciales ni tokens a documentación, logs o fixtures.
@@ -38,6 +54,6 @@ El puente de Apps Script está en `integrations/google-sheets-bridge/`. `clasp d
 
 Vercel se publica con la CLI del proyecto (`npx --yes vercel@60.0.0 deploy --prod --yes --scope team_vBGSim0Om0qNR6PJXwpuSvow`) y se verifica con `vercel inspect`, el dominio, rutas y recorridos pertinentes. La instrucción de Producción directa no convierte una tarea documental en autorización para publicar. No supongas que un push a `main` actualiza Producción.
 
-## Cierre y handoff
+## Cierre local
 
-Actualiza sólo los documentos cuya verdad cambió. Al entregar, resume objetivo, rutas modificadas, evidencia y límites, rama/HEAD/estado sucio, cambios sin commit, remoto, despliegue/Producción y el siguiente paso concreto. No declares verificación funcional cuando sólo se comprobó build, HTTP o estado del proveedor.
+Al entregar, indica objetivo, rutas modificadas, evidencia y límites, rama/HEAD, estado sucio y cambios ajenos, remoto, despliegue/Producción y siguiente paso. Distingue código implementado, publicado en Git, desplegado y verificado en Producción.
