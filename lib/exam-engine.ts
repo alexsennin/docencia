@@ -40,26 +40,7 @@ export function evaluateAutomatic(exam: ExamDefinition, answers: AnswerMap, atte
   };
 }
 
-export function makeAiPrompt(exam: ExamDefinition, question: ExamQuestion, answer: string | string[]) {
-  return `Eres evaluador docente de Español. Evalúa únicamente la respuesta del alumno usando la rúbrica proporcionada. No inventes datos. Devuelve JSON válido con score, level, feedback, strengths y opportunities. El score debe estar entre 0 y ${question.maxScore}. Examen: ${exam.name}. Reactivo: ${question.prompt}. Respuesta: ${JSON.stringify(answer)}. Rúbrica: ${JSON.stringify(question.rubric)}.`;
-}
-
-export async function evaluateOpenWithGemini(exam: ExamDefinition, question: ExamQuestion, answer: string | string[]) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return null;
-  const model = process.env.GEMINI_MODEL || "gemini-3.6-flash";
-  const base = process.env.GEMINI_API_BASE_URL || "https://generativelanguage.googleapis.com/v1beta/models";
-  const response = await fetch(`${base}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: makeAiPrompt(exam, question, answer) }] }],
-      generationConfig: { responseMimeType: "application/json", temperature: 0.1 },
-    }),
-  });
-  if (!response.ok) throw new Error(`Gemini respondió ${response.status}`);
-  const payload = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
-  const text = payload.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-  if (!text) throw new Error("Gemini no devolvió contenido");
-  return JSON.parse(text.replace(/^```json\s*/i, "").replace(/\s*```$/, "")) as { score: number; level: string; feedback: string; strengths?: string[]; opportunities?: string[] };
+export async function evaluateOpenWithGemini(exam: ExamDefinition, question: ExamQuestion, answer: string | string[]): Promise<{ score: number; level: string; feedback: string; strengths?: string[]; opportunities?: string[] } | null> {
+  void exam; void question; void answer;
+  throw new Error("La evaluación Gemini sólo se ejecuta en el puente de Apps Script, con la clave de Script Properties.");
 }

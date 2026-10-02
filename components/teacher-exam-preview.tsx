@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ProgressOverlay } from "./progress-overlay";
 import type { AnswerMap, ExamResult, PublicExam } from "../lib/exam-types";
@@ -18,6 +18,7 @@ export default function TeacherExamPreview() {
   const [result, setResult] = useState<ExamResult | null>(null);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const evaluationInFlight = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -38,6 +39,8 @@ export default function TeacherExamPreview() {
   function update(questionId: string, value: string | string[]) { setAnswers((current) => ({ ...current, [questionId]: value })); }
 
   async function evaluate() {
+    if (evaluationInFlight.current) return;
+    evaluationInFlight.current = true;
     setBusy("Evaluando prueba…"); setError("");
     try {
       const response = await fetch("/api/teacher/preview", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ examId, answers }) });
@@ -45,7 +48,7 @@ export default function TeacherExamPreview() {
       if (!response.ok) throw new Error(data.error || "No se pudo evaluar.");
       setResult(data.result);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "No se pudo evaluar."); }
-    finally { setBusy(""); }
+    finally { evaluationInFlight.current = false; setBusy(""); }
   }
 
   return <main className="student-shell"><section className="student-card selection-card teacher-preview">

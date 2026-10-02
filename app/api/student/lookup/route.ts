@@ -2,6 +2,8 @@ import { demoExams, demoStudents } from "../../../../lib/demo-exams";
 import { toPublicExam } from "../../../../lib/exam-engine";
 import { hasSheetsBridge, sheetsBridge } from "../../../../lib/sheets-bridge";
 import type { PublicExam, Student } from "../../../../lib/exam-types";
+import { getDataBackend } from "../../../../lib/data-backend";
+import { lookupStudentInPostgres } from "../../../../lib/student-access";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +12,10 @@ export async function POST(request: Request) {
     const body = await request.json() as { studentId?: string };
     const studentId = body.studentId?.trim();
     if (!studentId) return Response.json({ error: "Escribe tu ID escolar." }, { status: 400 });
+    if (getDataBackend() === "postgres") {
+      const data = await lookupStudentInPostgres(studentId);
+      return Response.json({ ...data, source: "postgres" }, { headers: { "Cache-Control": "no-store" } });
+    }
     if (hasSheetsBridge()) {
       const data = await sheetsBridge<{ student: Student; exams: PublicExam[] }>("lookupStudent", { studentId });
       return Response.json({ ...data, source: "sheets" });

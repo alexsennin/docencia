@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { hasSheetsBridge, sheetsBridge } from "../../../lib/sheets-bridge";
 import { createTeacherSession, teacherAuthConfigured, teacherPasswordMatches, teacherSessionCookie, teacherSessionMaxAge } from "../../../lib/teacher-auth";
+import { getDataBackend } from "../../../lib/data-backend";
+import { lookupStudentInPostgres } from "../../../lib/student-access";
 import type { PublicExam, Student } from "../../../lib/exam-types";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +16,10 @@ export async function POST(request: Request) {
       const response = NextResponse.json({ role: "teacher" }, { headers: { "Cache-Control": "no-store" } });
       response.cookies.set(teacherSessionCookie, createTeacherSession(), { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict", path: "/", maxAge: teacherSessionMaxAge });
       return response;
+    }
+    if (getDataBackend() === "postgres") {
+      const data = await lookupStudentInPostgres(credential);
+      return NextResponse.json({ role: "student", ...data, source: "postgres" }, { headers: { "Cache-Control": "no-store" } });
     }
     if (!hasSheetsBridge()) return NextResponse.json({ error: "El acceso escolar aún no está disponible." }, { status: 503 });
     const data = await sheetsBridge<{ student: Student; exams: PublicExam[] }>("lookupStudent", { studentId: credential });

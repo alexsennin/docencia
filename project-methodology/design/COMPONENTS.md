@@ -4,16 +4,16 @@ Inventario estático de los componentes principales del checkout de Docencia. De
 
 | Componente | Archivo | Responsabilidad observada |
 | --- | --- | --- |
-| `TeacherDashboard` | [`teacher-dashboard.tsx`](../../components/teacher-dashboard.tsx) | Coordina navegación y vistas del panel docente: sesiones, calificaciones, rúbrica C.A., autoría y reportes de exámenes, y configuración relacionada. |
-| `TeacherAcademicModule` | [`teacher-academic-module.tsx`](../../components/teacher-academic-module.tsx) | Captura y revisa sesiones, asistencia, comentarios y actividades; muestra datos académicos del grupo/parcial. |
-| `TeacherCaRubric` | [`teacher-ca-rubric.tsx`](../../components/teacher-ca-rubric.tsx) | Inicia y presenta el progreso del procesamiento C.A. por grado, y permite revisar propuestas. |
+| `TeacherDashboard` | [`teacher-dashboard.tsx`](../../components/teacher-dashboard.tsx) | Coordina navegación y vistas del panel docente; mantiene el selector de parcial y el formulario `Nuevo parcial`, cuyo guardado remoto muestra `ProgressOverlay`. |
+| `TeacherAcademicModule` | [`teacher-academic-module.tsx`](../../components/teacher-academic-module.tsx) | Captura y revisa sesiones, asistencia, comentarios y actividades; consulta calificaciones y presenta el listado general de sesiones, tareas y trabajos archivados. |
+| `TeacherCaRubric` | [`teacher-ca-rubric.tsx`](../../components/teacher-ca-rubric.tsx) | Inicia y presenta el progreso C.A. por grupo; en Postgres avanza jobs persistidos por petición autenticada y los reanuda al volver a abrir la sección. |
 | `TeacherExamAuthoring` | [`teacher-exam-authoring.tsx`](../../components/teacher-exam-authoring.tsx) | Recibe materiales, solicita un borrador de examen y presenta controles de revisión/publicación. |
-| `TeacherExamGradeMatrix` | [`teacher-exam-grade-matrix.tsx`](../../components/teacher-exam-grade-matrix.tsx) | Presenta calificaciones por alumno y reactivo según el parcial seleccionado. |
+| `TeacherExamGradeMatrix` | [`teacher-exam-grade-matrix.tsx`](../../components/teacher-exam-grade-matrix.tsx) | Presenta calificaciones por alumno y reactivo según el parcial seleccionado; `Ver respuestas` abre el desglose con consigna, respuesta, estado, puntaje y retroalimentación usando los datos ya consultados. |
 | `AdminExamControls` | [`admin-exam-controls.tsx`](../../components/admin-exam-controls.tsx) | Busca intentos entregados y presenta el flujo docente para revocar un examen. |
 | `TeacherExamPreview` | [`teacher-exam-preview.tsx`](../../components/teacher-exam-preview.tsx) | Permite revisar la presentación de un examen sin crear un intento ni guardar en Sheets. |
 | `StudentExamPortal` | [`student-exam-portal.tsx`](../../components/student-exam-portal.tsx) | Gestiona acceso por ID escolar, lista de exámenes, intento, guardado de respuestas y resultados del alumno. |
 | `TeacherLoginForm` | [`teacher-login-form.tsx`](../../components/teacher-login-form.tsx) | El archivo define un formulario docente, pero no se encontró referencia desde `app/` o `components/`; ver `UI-001`. El acceso observado en `/` está en `StudentExamPortal`. |
-| `TeacherGeminiSettings` | [`teacher-gemini-settings.tsx`](../../components/teacher-gemini-settings.tsx) | Consulta y configura la conexión Gemini sin revelar la clave al navegador. |
+| `TeacherGeminiSettings` | [`teacher-gemini-settings.tsx`](../../components/teacher-gemini-settings.tsx) | Consulta configuración de Gemini; permite editarla en Apps Script o muestra el estado del secreto de servidor cuando se usa Postgres, sin revelar la clave. |
 | `ProgressOverlay` | [`progress-overlay.tsx`](../../components/progress-overlay.tsx) | Expone el título y detalle de operaciones remotas bloqueantes. |
 
 ## Estados compartidos y límites

@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "grades_partial_student_unique" ON "grades" USING btree ("parcial_id","alumno_id");

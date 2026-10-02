@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { ProgressOverlay } from "./progress-overlay";
 
@@ -8,10 +8,12 @@ export function TeacherLoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submitInFlight = useRef(false);
 
   async function signIn(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (isSubmitting) return;
+    if (submitInFlight.current) return;
+    submitInFlight.current = true;
     setError("");
     setIsSubmitting(true);
     try {
@@ -25,6 +27,7 @@ export function TeacherLoginForm() {
       window.location.replace("/");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "No se pudo iniciar sesión.");
+      submitInFlight.current = false;
       setIsSubmitting(false);
     }
   }
@@ -38,7 +41,7 @@ export function TeacherLoginForm() {
         <p className="student-lead">Escribe tu contraseña para entrar al panel de evaluación.</p>
         <form className="student-form" onSubmit={signIn}>
           <label>Contraseña
-            <input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required autoFocus />
+            <input type="text" autoComplete="current-password" autoCapitalize="off" autoCorrect="off" spellCheck={false} value={password} onChange={(event) => setPassword(event.target.value)} required autoFocus />
           </label>
           <button className="primary-button" type="submit" disabled={isSubmitting}>{isSubmitting ? "Accediendo…" : "Ingresar"}</button>
         </form>

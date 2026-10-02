@@ -9,6 +9,7 @@ Descripción estática de las estructuras visuales principales del checkout. Los
 | Portal alumno | Tarjeta centrada; la tarjeta de entrada tiene máximo de 520 px y la de contenido, 940 px. | Formularios, acceso, resultados y lista de exámenes reacomodan controles en pantallas estrechas. |
 | Examen | Barra superior con temporizador y contenido centrado, con máximo de 920 px. | Las tarjetas de reactivos se apilan; las acciones se expanden al ancho disponible en móvil. |
 | Captura académica | Tabla de sesión con encabezados y alumnos; paneles de detalle, listas y formularios. | Tabla, matriz y paneles con contenido extenso mantienen desplazamiento; varios contenedores tienen altura máxima con overflow. |
+| Archivados | Tabla general de sesiones, tareas y trabajos retirados de los cálculos activos, con grupo, parcial y fechas. | Reutiliza el contenedor desplazable de matrices; no ofrece restauración todavía. |
 | Diálogos | Overlay de progreso y diálogos para revisión, confirmación y detalles. | El CSS limita ancho y altura, con desplazamiento interno para contenido largo. |
 
 ## Breakpoints CSS localizados

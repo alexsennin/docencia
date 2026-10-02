@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ProgressOverlay } from "./progress-overlay";
 
 type CompletedAttempt = {
@@ -10,6 +10,7 @@ type CompletedAttempt = {
   grade: string;
   group: string;
   examId: string;
+  partialId: string;
   examName: string;
   status: string;
   submittedAt: string;
@@ -18,7 +19,7 @@ type CompletedAttempt = {
 type StudentOption = Pick<CompletedAttempt, "studentId" | "studentName" | "grade" | "group">;
 type ExamOption = { examId: string; examName: string; attempts: CompletedAttempt[]; latestSubmission: string };
 
-export function AdminExamControls() {
+export function AdminExamControls({ active, partialId }: { active: boolean; partialId: string }) {
   const [attempts, setAttempts] = useState<CompletedAttempt[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -29,6 +30,8 @@ export function AdminExamControls() {
   const [message, setMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
+  const revokeInFlight = useRef(false);
 
   async function loadCompletedAttempts() {
     setIsLoading(true);
@@ -46,6 +49,7 @@ export function AdminExamControls() {
   }
 
   useEffect(() => {
+    if (!active || initialLoadDone) return;
     let cancelled = false;
     async function loadInitialAttempts() {
       try {
@@ -56,18 +60,20 @@ export function AdminExamControls() {
       } catch (error) {
         if (!cancelled) setLoadError(error instanceof Error ? error.message : "No se pudieron consultar los exámenes realizados.");
       } finally {
-        if (!cancelled) setIsLoading(false);
+        if (!cancelled) { setIsLoading(false); setInitialLoadDone(true); }
       }
     }
     void loadInitialAttempts();
     return () => { cancelled = true; };
-  }, []);
+  }, [active, initialLoadDone]);
+
+  const partialAttempts = useMemo(() => attempts.filter((attempt) => attempt.partialId === partialId), [attempts, partialId]);
 
   const students = useMemo(() => {
     const query = studentSearch.trim().toLocaleLowerCase("es-MX");
     if (query.length < 2) return [];
     const unique = new Map<string, StudentOption>();
-    for (const attempt of attempts) {
+    for (const attempt of partialAttempts) {
       if (attempt.studentName.toLocaleLowerCase("es-MX").includes(query)) {
         unique.set(attempt.studentId, {
           studentId: attempt.studentId,
@@ -78,10 +84,10 @@ export function AdminExamControls() {
       }
     }
     return [...unique.values()].sort((a, b) => a.studentName.localeCompare(b.studentName, "es-MX"));
-  }, [attempts, studentSearch]);
+  }, [partialAttempts, studentSearch]);
 
   const selectedStudent = students.find((student) => student.studentId === studentId)
-    ?? [...new Map(attempts.map((attempt) => [attempt.studentId, {
+    ?? [...new Map(partialAttempts.map((attempt) => [attempt.studentId, {
       studentId: attempt.studentId,
       studentName: attempt.studentName,
       grade: attempt.grade,
@@ -90,7 +96,7 @@ export function AdminExamControls() {
 
   const completedExams = useMemo(() => {
     const byExam = new Map<string, ExamOption>();
-    for (const attempt of attempts) {
+    for (const attempt of partialAttempts) {
       if (attempt.studentId !== studentId) continue;
       const exam = byExam.get(attempt.examId) ?? {
         examId: attempt.examId,
@@ -103,7 +109,7 @@ export function AdminExamControls() {
       byExam.set(attempt.examId, exam);
     }
     return [...byExam.values()].sort((a, b) => a.examName.localeCompare(b.examName, "es-MX"));
-  }, [attempts, studentId]);
+  }, [partialAttempts, studentId]);
 
   const selectedExam = completedExams.find((exam) => exam.examId === examId);
 
@@ -114,7 +120,8 @@ export function AdminExamControls() {
   }
 
   async function confirmRevocation() {
-    if (!selectedStudent || !selectedExam) return;
+    if (revokeInFlight.current || !selectedStudent || !selectedExam) return;
+    revokeInFlight.current = true;
     setIsConfirming(false);
     setIsSubmitting(true);
     setMessage("");
@@ -132,6 +139,7 @@ export function AdminExamControls() {
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "No se pudo revocar el examen.");
     } finally {
+      revokeInFlight.current = false;
       setIsSubmitting(false);
     }
   }
@@ -228,7 +236,6 @@ export function AdminExamControls() {
         </button>
       </form>
 
-      {isLoading && <p className="admin-control-hint" role="status">Consultando exámenes entregados…</p>}
       {loadError && <p className="notice" role="alert">{loadError}</p>}
       {!isLoading && !loadError && attempts.length === 0 && <p className="admin-control-hint">Aún no hay exámenes entregados para revocar.</p>}
       {selectedExam && <p className="admin-control-hint">Se encontraron {selectedExam.attempts.length} intento(s) entregados de este examen. La revocación los eliminará todos junto con sus respuestas y evaluaciones de IA.</p>}
@@ -247,7 +254,8 @@ export function AdminExamControls() {
           </section>
         </div>
       )}
-      {isSubmitting && <ProgressOverlay title="Revocando examen…" detail="Verificamos el alumno y borramos sólo sus intentos entregados del examen seleccionado." />}
+      {isLoading && !isSubmitting && <ProgressOverlay title="Consultando exámenes entregados…" detail="Cargamos los intentos para que puedas buscar al alumno y elegir el examen correcto." />}
+      {isSubmitting && <ProgressOverlay title="Revocando examen…" detail="Verificamos al alumno, eliminamos sus intentos entregados y actualizamos las calificaciones." />}
     </section>
   );
 }

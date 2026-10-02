@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "ai_evaluations_attempt_question_unique" ON "ai_evaluations" USING btree ("intento_id","reactivo_id");

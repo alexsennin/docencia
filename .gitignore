@@ -8,4 +8,5 @@ out/
 *.log
 .DS_Store
 .vercel
+.neon-build/
 *.tsbuildinfo

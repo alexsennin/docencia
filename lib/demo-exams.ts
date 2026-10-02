@@ -8,7 +8,7 @@ const multi = (id: string, order: number, topic: string, prompt: string, options
   topic,
   type: "opcion_multiple" as const,
   prompt,
-  options: options.map((label) => option(label.slice(0, 1), label)),
+  options: options.map((label, index) => option(String.fromCharCode(65 + index), label)),
   correctAnswer: correct,
   maxScore,
   evaluationMethod: "automatic" as const,
