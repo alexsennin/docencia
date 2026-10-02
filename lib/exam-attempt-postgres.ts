@@ -469,6 +469,18 @@ export async function submitExamAttemptInPostgres(
     const attemptRow = (await tx.select().from(examAttempts).where(eq(examAttempts.id, attemptId)).limit(1))[0];
     if (!attemptRow) throw new ExamWorkflowError("No se encontró el intento después de aceptar el envío.", 409);
     const answerRows = await tx.select().from(examAnswers).where(eq(examAnswers.attemptId, attemptId));
+    // A recovered expired attempt reaches Evaluando with its autosaved answers,
+    // before a normal submission has created the durable AI evaluation records.
+    const recoveredAnswers = storedAnswers(answerRows);
+    for (const question of exam.questions.filter((item) => item.evaluationMethod === "ai")) {
+      const answer = recoveredAnswers[question.id];
+      if (!answer || (Array.isArray(answer) && !answer.some((item) => item.trim()))) continue;
+      await tx.insert(aiEvaluations).values({
+        id: `ai-${randomUUID()}`, attemptId, questionId: question.id,
+        model: process.env.GEMINI_MODEL || "gemini-3.6-flash", promptVersion: "1.0",
+        input: { answer, rubric: question.rubric ?? null }, status: "Pendiente",
+      }).onConflictDoNothing({ target: [aiEvaluations.attemptId, aiEvaluations.questionId] });
+    }
     const evaluationRows = await tx.select().from(aiEvaluations).where(eq(aiEvaluations.attemptId, attemptId));
     return { attempt: attemptRow, answers: storedAnswers(answerRows), answerRows, evaluationRows } as const;
   });
@@ -525,6 +537,10 @@ export async function submitExamAttemptInPostgres(
     const answers = await tx.select().from(examAnswers).where(eq(examAnswers.attemptId, attemptId));
     const evaluations = await tx.select().from(aiEvaluations).where(eq(aiEvaluations.attemptId, attemptId));
     const result = resultFromRows(attempt, exam, answers, evaluations);
+    for (const item of result.items) {
+      await tx.update(examAnswers).set({ score: item.score === null ? null : String(item.score), feedback: item.feedback })
+        .where(and(eq(examAnswers.attemptId, attemptId), eq(examAnswers.questionId, item.questionId)));
+    }
     const finalizedAt = new Date().toISOString();
     const [finalized] = await tx.update(examAttempts).set({
       status: result.aiPending ? "Provisional" : "Definitivo",
@@ -688,13 +704,14 @@ export async function reevaluateOpenAnswerInPostgres(
   });
 }
 
-export async function getTeacherExamResultsInPostgres() {
+export async function getTeacherExamResultsInPostgres(options: { includeInProgress?: boolean } = {}) {
   const db = getDatabase();
   const [studentRows, allExamRows, assignmentRows, attemptRows] = await Promise.all([
     db.select().from(students).orderBy(asc(students.grade), asc(students.group), asc(students.name)),
     db.select().from(exams).orderBy(asc(exams.createdAt), asc(exams.id)),
     db.select().from(examAssignments),
-    db.select().from(examAttempts).where(inArray(examAttempts.status, ["Definitivo", "Provisional"])),
+    db.select().from(examAttempts).where(inArray(examAttempts.status, options.includeInProgress
+      ? ["Definitivo", "Provisional", ...ACTIVE_STATES] : ["Definitivo", "Provisional"])),
   ]);
   const publishedExams = allExamRows.filter((exam) => exam.status === "Publicado");
   const publishedIds = publishedExams.map((exam) => exam.id);
@@ -759,6 +776,11 @@ export async function getTeacherExamResultsInPostgres() {
       const student = studentById.get(attempt.studentId.trim().toUpperCase());
       const exam = examById.get(attempt.examId);
       if (!exam) return [];
+      const completed = attempt.status === "Definitivo" || attempt.status === "Provisional";
+      const savedAnswers = answersByAttempt.get(attempt.id) ?? [];
+      const evaluatedItems = completed ? new Map(resultFromRows(attempt,
+        toExamDefinition(exam, (questionsByExam.get(exam.id) ?? []).map(toExamQuestion)),
+        savedAnswers, evaluationsByAttempt.get(attempt.id) ?? []).items.map((item) => [item.questionId, item])) : new Map();
       const evaluationByQuestion = new Map((evaluationsByAttempt.get(attempt.id) ?? []).map((item) => [item.questionId, item]));
       return [{
         attemptId: attempt.id,
@@ -770,6 +792,11 @@ export async function getTeacherExamResultsInPostgres() {
         examName: exam.name,
         partialId: attempt.partialId,
         status: attempt.status,
+        submissionState: completed ? "Entregado" : attempt.status === "Evaluando"
+          ? Date.now() - Date.parse(attempt.updatedAt ?? attempt.finishedAt ?? "") > AI_PROCESSING_LEASE_MS
+            ? "Envío aceptado; evaluación interrumpida" : "Envío aceptado; evaluación en curso"
+          : attempt.status === "Bloqueado" ? "Bloqueado; sin enviar"
+          : Date.now() > deadlineFor(attempt).getTime() + 60_000 ? "Tiempo agotado; sin enviar" : "En curso; sin enviar",
         score: attempt.totalScore === null ? null : Number(attempt.totalScore),
         grade10: attempt.gradeOnTen === null ? null : Number(attempt.gradeOnTen),
         automaticScore: attempt.automaticScore === null ? null : Number(attempt.automaticScore),
@@ -780,12 +807,14 @@ export async function getTeacherExamResultsInPostgres() {
           const ai = evaluationByQuestion.get(answer.questionId);
           const aiPending = question?.evaluationMethod === "ai" && ai?.status !== "Evaluada";
           const savedAnswer = parseStoredAnswer(answer.answer);
+          const evaluated = evaluatedItems.get(answer.questionId);
           return {
             questionId: answer.questionId,
             answer: Array.isArray(savedAnswer) ? savedAnswer.join(", ") : savedAnswer,
-            score: answer.score === null ? null : Number(answer.score),
-            feedback: ai?.status === "Evaluada" ? ai.feedback ?? answer.feedback ?? "" : answer.feedback ?? "",
-            status: aiPending ? "Pendiente" : ai?.status === "Evaluada" ? "Evaluada" : answer.aiStatus ?? answer.status ?? "",
+            score: completed ? evaluated?.score ?? null : null,
+            feedback: evaluated?.feedback ?? (ai?.status === "Evaluada" ? ai.feedback ?? answer.feedback ?? "" : answer.feedback ?? ""),
+            status: !completed ? "Guardada; sin evaluar" : evaluated?.status === "pendiente_ia" || aiPending && evaluated?.score == null ? "Pendiente"
+              : question?.evaluationMethod === "ai" && ai?.status === "Evaluada" ? "Evaluada" : evaluated?.status ?? answer.aiStatus ?? answer.status ?? "",
           };
         }),
       }];

@@ -7,7 +7,7 @@ type ExamQuestion = { questionId: string; order: number; maxScore: number; promp
 type MatrixExam = { examId: string; examName: string; partialId: string; grade: string; group: string; groups: string[]; questions: ExamQuestion[] };
 type Student = { studentId: string; studentName: string; grade: string; group: string };
 type Answer = { questionId: string; answer: string; score: number | null; feedback: string; status: string };
-type ExamAttempt = { attemptId: string; studentId: string; grade: string; group: string; examId: string; partialId: string; status: string; submittedAt: string; grade10?: number | null; answers: Answer[] };
+type ExamAttempt = { attemptId: string; studentId: string; grade: string; group: string; examId: string; partialId: string; status: string; submissionState?: string; submittedAt: string; grade10?: number | null; answers: Answer[] };
 type MatrixResponse = { exams?: MatrixExam[]; students?: Student[]; results?: ExamAttempt[]; error?: string };
 
 const groupName = (student: Student) => `${student.grade} ${student.group}`.trim();
@@ -36,7 +36,7 @@ export function TeacherExamGradeMatrix({ active, partialId, partialName }: { act
       setError("");
       setSelectedAttemptId("");
       try {
-        const response = await fetch("/api/teacher/results", { cache: "no-store", signal: controller.signal });
+        const response = await fetch("/api/teacher/results?includeInProgress=true", { cache: "no-store", signal: controller.signal });
         const body = await response.json() as MatrixResponse;
         if (!response.ok) throw new Error(body.error || "No se pudo cargar la matriz de exámenes.");
         if (cancelled) return;
@@ -91,16 +91,17 @@ export function TeacherExamGradeMatrix({ active, partialId, partialName }: { act
         const selectedAnswers = new Map((selectedAttempt?.answers ?? []).map((answer) => [answer.questionId, answer]));
         return <section className="academic-card exam-grade-matrix-card" key={exam.examId} aria-label={`Matriz de ${exam.examName}`}>
           <div className="academic-matrix-header"><div><p className="eyebrow">{group} · {partialName}</p><h2>{exam.examName}</h2></div><span className="result-count">{exam.questions.length} preguntas · {attempts.size} con intento</span></div>
-          {!exam.questions.length ? <p className="dashboard-empty">Este examen no tiene preguntas activas.</p> : <div className="matrix-scroll"><table className="academic-matrix exam-grade-matrix-table"><thead><tr><th>ID</th><th>Nombre del alumno</th><th>Respuestas</th>{exam.questions.map((question) => <th key={question.questionId} title={question.questionId}>Pregunta {question.order}</th>)}</tr></thead><tbody>
+          {!exam.questions.length ? <p className="dashboard-empty">Este examen no tiene preguntas activas.</p> : <div className="matrix-scroll"><table className="academic-matrix exam-grade-matrix-table"><thead><tr><th>ID</th><th>Nombre del alumno</th><th>Estado y detalle</th>{exam.questions.map((question) => <th key={question.questionId} title={question.prompt || question.questionId}>Pregunta {question.order}</th>)}</tr></thead><tbody>
             {groupStudents.map((student) => {
               const attempt = attempts.get(student.studentId);
               const answers = new Map((attempt?.answers ?? []).map((answer) => [answer.questionId, answer]));
-              return <tr key={student.studentId}><td>{student.studentId}</td><th scope="row">{student.studentName}</th><td>{attempt ? <button type="button" className="text-button" id={`exam-detail-trigger-${attempt.attemptId}`} aria-label={`Ver respuestas de ${student.studentName} en ${exam.examName}`} aria-expanded={selectedAttemptId === attempt.attemptId} aria-controls={`exam-detail-${exam.examId}`} onClick={() => setSelectedAttemptId(attempt.attemptId)}>Ver respuestas</button> : "Sin intento"}</td>{exam.questions.map((question) => {
+              const completed = attempt?.status === "Definitivo" || attempt?.status === "Provisional";
+              return <tr key={student.studentId}><td>{student.studentId}</td><th scope="row">{student.studentName}</th><td>{attempt ? <><span className="exam-matrix-state">{attempt.submissionState || attempt.status}</span><button type="button" className="text-button" id={`exam-detail-trigger-${attempt.attemptId}`} aria-label={`Ver respuestas de ${student.studentName} en ${exam.examName}`} aria-expanded={selectedAttemptId === attempt.attemptId} aria-controls={`exam-detail-${exam.examId}`} onClick={() => setSelectedAttemptId(attempt.attemptId)}>Ver respuestas</button></> : "Sin intento"}</td>{exam.questions.map((question) => {
                 const answer = answers.get(question.questionId);
-                const grade = !answer ? "—" : answer.score === null
-                  ? "Pendiente"
+                const grade = !answer ? "—" : !completed ? "Sin evaluar" : answer.score === null
+                  ? "Pendiente de evaluación"
                   : `${formatPoints(answer.score)} / ${formatPoints(question.maxScore)}`;
-                return <td key={question.questionId} title={answer?.status || (attempt ? "Sin registro de calificación" : "Sin intento")}>{grade}</td>;
+                return <td key={question.questionId} title={answer?.status || (attempt ? "Sin respuesta guardada" : "Sin intento")}><span className="exam-matrix-answer">{answer ? answer.answer || "Sin respuesta" : "—"}</span>{answer && <small className="exam-matrix-score">{grade}</small>}</td>;
               })}</tr>;
             })}
           </tbody></table></div>}
@@ -110,12 +111,12 @@ export function TeacherExamGradeMatrix({ active, partialId, partialName }: { act
               document.getElementById(`exam-detail-trigger-${selectedAttempt.attemptId}`)?.focus();
             }}>Cerrar detalle</button>
             <h3 ref={detailHeading} tabIndex={-1} id={`exam-detail-title-${exam.examId}`}>{selectedStudent.studentName} · {exam.examName}</h3>
-            <p>{group} · {partialName} · {selectedAttempt.status} · {selectedAttempt.grade10 == null ? "Calificación pendiente" : `${formatPoints(selectedAttempt.grade10)} / 10`}</p>
+            <p>{group} · {partialName} · {selectedAttempt.submissionState || selectedAttempt.status} · {selectedAttempt.grade10 == null ? "Sin calificación final" : `${formatPoints(selectedAttempt.grade10)} / 10`}</p>
             <div className="result-items">{exam.questions.map((question) => {
               const answer = selectedAnswers.get(question.questionId);
               return <div className="result-item" key={question.questionId}>
                 <strong>Pregunta {question.order}</strong><span>{answer?.status || (answer ? "Registrada" : "Sin respuesta registrada")}</span>
-                <b>{!answer || answer.score === null ? "Pendiente" : `${formatPoints(answer.score)} / ${formatPoints(question.maxScore)} puntos`}</b>
+                <b>{selectedAttempt.status !== "Definitivo" && selectedAttempt.status !== "Provisional" ? "Sin evaluar" : !answer || answer.score === null ? "Pendiente de evaluación" : `${formatPoints(answer.score)} / ${formatPoints(question.maxScore)} puntos`}</b>
                 {question.prompt && <small>{question.prompt}</small>}
                 <small className="exam-answer-text">Respuesta: {answer?.answer || "Sin respuesta"}</small>
                 {answer?.feedback && <small className="exam-answer-text">Retroalimentación: {answer.feedback}</small>}

@@ -2,6 +2,16 @@
 
 Fecha de actualización: 2026-10-02.
 
+## Matriz de respuestas, puntajes y envíos incompletos (2026-10-02)
+
+La revisión posterior de Producción encontró 17 intentos Definitivos de 2.º B con 153 respuestas, 136 automáticas sin puntaje por pregunta persistido y 16 evaluaciones IA completadas sin error. Los falsos `Pendiente` venían de leer el campo nulo de la respuesta automática, aunque el motor calculaba el resultado final del alumno correctamente. El reporte docente ahora usa ese mismo motor para los intentos entregados; consultar no modifica sus respuestas ni calificaciones históricas. Los nuevos envíos persisten además los puntajes por reactivo.
+
+La matriz muestra respuesta y puntaje en cada celda; las respuestas largas tienen vista previa de tres líneas y detalle completo. Su consulta optativa incluye intentos Activo/Bloqueado/Evaluando con estados explícitos, mientras los reportes ordinarios conservan sólo intentos entregados. Se encontraron dos intentos activos con 17 respuestas no vacías autoguardadas, uno fuera de tiempo en la lectura; no se enviaron ni cambiaron sus estados. Un intento sin enviar muestra las respuestas guardadas sin calcular notas.
+
+La recuperación existente al reingresar al intento vencido conserva el mismo ID y las respuestas autoguardadas. Se corrigió la creación de las evaluaciones durables faltantes de respuestas abiertas cuando el intento ya llegó a Evaluando desde el vencimiento. La prueba aislada verificó recuperación con payload vacío sin borrar el autoguardado, evaluación con proveedor ficticio y resultado final recuperable; no llamó Gemini ni cambió datos escolares.
+
+Validación: integración de intento de examen en PostgreSQL temporal con semilla ficticia (incluye regresiones de puntaje automático nuevo, lectura de puntajes históricos nulos sin escrituras, exclusión optativa de activos y recuperación de vencimiento); build optimizado aislado y TypeScript. La base temporal se eliminó después del ensayo. UI aislada confirmó respuesta y puntaje cero/positivo, estado sin enviar y detalle completo. La publicación y comprobación final de Producción se registran en la entrega.
+
 ## Desglose de respuestas y sincronización de fuente (2026-10-02)
 
 La consulta autenticada de Producción confirmó 16 intentos entregados de 2.º B y 144 respuestas, correspondientes a los nueve reactivos del examen. Las relaciones alumno/intento/reactivo coincidieron; la API ya entregaba las respuestas. La matriz de `Exámenes` sólo mostraba puntos y no ofrecía acceso al detalle, disponible anteriormente en Constructor/Revocador. Se incorpora `Ver respuestas` por alumno: muestra consignas, respuestas, estados, puntajes y retroalimentación; las notas no evaluadas siguen pendientes. Cambiar grupo o parcial descarta la selección, el detalle usa los datos de la consulta existente y no llama Gemini ni escribe intentos.

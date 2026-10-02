@@ -432,6 +432,8 @@ h2 { margin-bottom: 0; color: #1b2a43; font-size: 1.2rem; letter-spacing: -.025e
 .exam-grade-matrix-module, .exam-grade-matrix-list { display: grid; gap: 12px; }
 .exam-grade-matrix-card { min-width: 0; }
 .exam-answer-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.exam-matrix-answer { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; max-width: 190px; white-space: pre-wrap; overflow-wrap: anywhere; text-align: left; }
+.exam-matrix-score, .exam-matrix-state { display: block; margin-top: 5px; color: var(--muted); font-size: .7rem; }
 .exam-grade-matrix-card h2 { margin: 0; color: #263750; font-size: .95rem; }
 .exam-grade-matrix-table { min-width: max-content; }
 .exam-grade-matrix-table th:first-child, .exam-grade-matrix-table td:first-child { min-width: 88px; }

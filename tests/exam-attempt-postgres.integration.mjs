@@ -3,7 +3,7 @@ import test, { after } from "node:test";
 import { and, eq, inArray } from "drizzle-orm";
 import { closeDatabaseForTests, getDatabase } from "../db/client.ts";
 import { aiEvaluations, auditEvents, examAnswers, examAssignments, examAttempts, examQuestions, exams, grades } from "../db/schema.ts";
-import { getTeacherExamResultsInPostgres, reevaluateOpenAnswerInPostgres, revokeExamAttemptsInPostgres, startExamAttemptInPostgres, submitExamAttemptInPostgres, unlockExamAttemptInPostgres } from "../lib/exam-attempt-postgres.ts";
+import { getTeacherExamResultsInPostgres, reevaluateOpenAnswerInPostgres, revokeExamAttemptsInPostgres, saveExamAnswersInPostgres, startExamAttemptInPostgres, submitExamAttemptInPostgres, unlockExamAttemptInPostgres } from "../lib/exam-attempt-postgres.ts";
 
 const baseUrl = process.env.E2E_BASE_URL || "http://127.0.0.1:13000";
 const examId = "SYNTH-EXAM-ATTEMPT-001";
@@ -103,6 +103,11 @@ test("intento de examen Postgres: autorización, reanudación, autosave, bloqueo
   assert.equal((await saved.json()).source, "postgres");
   const [durableAnswer] = await db.select().from(examAnswers).where(and(eq(examAnswers.attemptId, started.attemptId), eq(examAnswers.questionId, questionId)));
   assert.equal(durableAnswer.answer, "A");
+  assert.equal((await getTeacherExamResultsInPostgres()).results.some((item) => item.attemptId === started.attemptId), false);
+  const activeReport = (await getTeacherExamResultsInPostgres({ includeInProgress: true })).results.find((item) => item.attemptId === started.attemptId);
+  assert.equal(activeReport.status, "Activo");
+  assert.equal(activeReport.answers[0].answer, "A");
+  assert.equal(activeReport.answers[0].score, null, "no calificar un intento sin enviar");
 
   const locked = await post("/api/exam/event", { attemptId: started.attemptId, examId, studentId, event: "visibility_hidden" });
   assert.equal(locked.status, 200);
@@ -129,6 +134,13 @@ test("intento de examen Postgres: autorización, reanudación, autosave, bloqueo
   const [finalAttempt] = await db.select().from(examAttempts).where(eq(examAttempts.id, started.attemptId));
   assert.equal(finalAttempt.status, "Definitivo");
   assert.equal(Number(finalAttempt.totalScore), 10);
+  const [scoredAnswer] = await db.select().from(examAnswers).where(and(eq(examAnswers.attemptId, started.attemptId), eq(examAnswers.questionId, questionId)));
+  assert.equal(Number(scoredAnswer.score), 10, "el envío persiste el puntaje automático por pregunta");
+  await db.update(examAnswers).set({ score: null }).where(eq(examAnswers.id, scoredAnswer.id));
+  const legacyReport = (await getTeacherExamResultsInPostgres()).results.find((item) => item.attemptId === started.attemptId);
+  assert.equal(legacyReport.answers[0].score, 10, "los exámenes ya entregados recuperan el puntaje del mismo motor del alumno");
+  const [unmodifiedLegacyAnswer] = await db.select().from(examAnswers).where(eq(examAnswers.id, scoredAnswer.id));
+  assert.equal(unmodifiedLegacyAnswer.score, null, "consultar el desglose no modifica datos históricos");
 
   await db.insert(exams).values({
     id: aiExamId, partialId: "SYNTH-P1", name: "Examen sintético con respuesta abierta", subject: "Español",
@@ -217,6 +229,20 @@ test("intento de examen Postgres: autorización, reanudación, autosave, bloqueo
   ))).at(-1);
   assert.ok(revocationEvent);
   assert.deepEqual(revocationEvent.details.attemptIds, [revokeAttempt.attemptId]);
+
+  const interrupted = await startExamAttemptInPostgres({ studentId, examId: revokeExamId });
+  await saveExamAnswersInPostgres({ attemptId: interrupted.attemptId, examId: revokeExamId, studentId, answers: { [revokeQuestionId]: "Respuesta autoguardada ficticia" } });
+  const expiredTime = new Date(Date.now() + 36 * 60_000);
+  const resumedExpired = await startExamAttemptInPostgres({ studentId, examId: revokeExamId }, expiredTime);
+  assert.equal(resumedExpired.attemptId, interrupted.attemptId);
+  assert.equal(resumedExpired.submissionPending, true);
+  assert.equal(resumedExpired.answers[revokeQuestionId], "Respuesta autoguardada ficticia");
+  const recoveredExpired = await submitExamAttemptInPostgres({ attemptId: interrupted.attemptId, examId: revokeExamId, studentId, answers: {} }, async (_exam, _question, answer) => {
+    assert.equal(answer, "Respuesta autoguardada ficticia", "recuperar el autoguardado, sin reemplazarlo por el payload vacío");
+    return { score: 4, level: "Adecuada", feedback: "Recuperación ficticia", strengths: [], opportunities: [] };
+  }, expiredTime);
+  assert.equal(recoveredExpired.result.aiPending, false);
+  assert.equal(recoveredExpired.result.grade10, 8);
 
   const originalGeminiKey = process.env.GEMINI_API_KEY;
   delete process.env.GEMINI_API_KEY;

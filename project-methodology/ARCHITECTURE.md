@@ -4,6 +4,10 @@
 
 Por instrucción explícita del usuario, Vercel Production (docencia.integratech.app) ya selecciona PostgreSQL en Neon. Neon es la fuente operativa actual; Docker PostgreSQL local conserva una copia independiente y Sheets/Apps Script quedan como legado, sin desactivación. La UI sigue en Vercel: Neon es el backend PostgreSQL, no el host del frontend. La aceptación autenticada consultó en Producción los 171 alumnos, 30 sesiones y 760 asistencias. La clave de Gemini está configurada en Vercel, pero no se hizo una llamada de prueba.
 
+## Reporte docente de exámenes (2026-10-02)
+
+`getTeacherExamResultsInPostgres` reconstruye el desglose de intentos Definitivo/Provisional con el mismo motor del resultado estudiantil, incluida la nota automática que versiones anteriores no persistían por pregunta. No escribe ni invoca IA durante la consulta. El envío guarda también puntaje/retroalimentación por reactivo. `includeInProgress=true` en la ruta docente permite que la matriz muestre respuestas autoguardadas de Activo/Bloqueado/Evaluando, sin calificarlas; el comportamiento ordinario de resultados/revocación sólo incluye entregados. La recuperación de intentos vencidos crea las evaluaciones IA faltantes desde el autoguardado dentro de la transacción de envío, sin reemplazar respuestas por un payload de recuperación.
+
 ## Reportes académicos con PostgreSQL
 
 Cuando `DATA_BACKEND=postgres`, `/api/teacher/academic` genera reportes con `lib/academic-report-postgres.ts`: el servidor vuelve a consultar al alumno, parcial y evidencia vigente, arma el contexto y llama al proveedor configurado desde servidor. El cliente sólo envía los identificadores; no puede suministrar calificaciones u observaciones para el prompt. La propuesta y su evidencia se guardan como `Pendiente_revision_docente`, con `visibilidad_alumno=false`; una transacción vuelve a comprobar que la evidencia no cambió mientras se generaba. La misma ruta requiere sesión docente para aprobar/publicar y registra auditoría. El endpoint del alumno filtra reportes privados y sólo entrega los visibles.

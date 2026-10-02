@@ -5,11 +5,11 @@ import { getTeacherExamResultsInPostgres } from "../../../../lib/exam-attempt-po
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   if (!(await hasTeacherSession())) return Response.json({ error: "Acceso docente requerido." }, { status: 401 });
   try {
     const backend = getDataBackend();
-    if (backend === "postgres") return Response.json(await getTeacherExamResultsInPostgres(), { headers: { "Cache-Control": "no-store" } });
+    if (backend === "postgres") return Response.json(await getTeacherExamResultsInPostgres({ includeInProgress: new URL(request.url).searchParams.get("includeInProgress") === "true" }), { headers: { "Cache-Control": "no-store" } });
     if (!hasSheetsBridge()) return Response.json({ error: "No está configurada la conexión con Google Sheets." }, { status: 503 });
     const data = await sheetsBridge<Record<string, unknown>>("listExamResults", {});
     return Response.json(data, { headers: { "Cache-Control": "no-store" } });
