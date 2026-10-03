@@ -6,7 +6,7 @@ Fecha de actualización: 2026-10-03.
 
 La tabla usa una sola fila por alumno. En `Estado y detalle`, el estado queda separado de sus controles por una línea; los reactivos se rotulan `P1`, `P2`, etc. y cada respuesta comparte renglón con su puntaje (por ejemplo, `B, 5/5`). Las respuestas largas conservan su vista previa recortada. Los flujos individuales de ver, editar, re-evaluar y finalizar permanecen en esa celda.
 
-Verificación: TypeScript y `npm run build` pasaron; ESLint terminó sin errores con las 16 advertencias conocidas del puente. El commit `39b50e4` está en `origin/main`, igual al HEAD local. Vercel `dpl_D4K3c21zRCtvkPDcWW9PPQFqBeXT` quedó READY y asociado a `docencia.integratech.app`; el dominio respondió 200 y la ruta docente protegida, 401 sin sesión. Docker local y Producción ejecutan el mismo código; conservan bases separadas. La sesión docente del navegador expiró al recargar después del despliegue, por lo que el acomodo autenticado no se volvió a inspeccionar visualmente en esta publicación.
+Verificación: TypeScript y `npm run build` pasaron; ESLint terminó sin errores con las 16 advertencias conocidas del puente. El commit funcional `029ac8a` está en `origin/main`, igual al HEAD local. Vercel `dpl_CFwnkJ4MF6Q63SPn3TBEspGXE9EZ` quedó READY y asociado a `docencia.integratech.app`; el dominio respondió 200 y la ruta docente protegida, 401 sin sesión. Docker local y Producción ejecutan el mismo código; conservan bases separadas. La sesión docente del navegador requiere volver a iniciar sesión tras recargar, por lo que no se verificó visualmente la matriz autenticada en esta publicación.
 
 ## Acciones individuales en la matriz de Exámenes (2026-10-02)
 
