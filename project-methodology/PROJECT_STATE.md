@@ -4,7 +4,7 @@ Fecha de actualización: 2026-10-03.
 
 ## Acomodo de la matriz de Exámenes (2026-10-03)
 
-La tabla usa una sola fila por alumno. En `Estado y detalle`, el estado queda separado de sus controles por una línea; los reactivos se rotulan `P1`, `P2`, etc. y cada respuesta comparte renglón con su puntaje (por ejemplo, `B, 5/5`). Las respuestas largas conservan su vista previa recortada. Los flujos individuales de ver, editar, re-evaluar y finalizar permanecen en esa celda.
+La tabla usa una sola fila por alumno. Después de `Estado y detalle` muestra `Calificación obtenida` sobre 10 y luego los reactivos `P1`, `P2`, etc.; cada respuesta comparte renglón con su puntaje (por ejemplo, `B, 5/5`). Los intentos sin evaluación muestran `Pendiente` en la columna total y las respuestas largas conservan su vista previa recortada. Los flujos individuales de ver, editar, re-evaluar y finalizar permanecen en la celda de estado.
 
 Verificación: TypeScript y `npm run build` pasaron; ESLint terminó sin errores con las 16 advertencias conocidas del puente. El commit funcional `029ac8a` está en `origin/main`, igual al HEAD local. Vercel `dpl_CFwnkJ4MF6Q63SPn3TBEspGXE9EZ` quedó READY y asociado a `docencia.integratech.app`; el dominio respondió 200 y la ruta docente protegida, 401 sin sesión. Docker local y Producción ejecutan el mismo código; conservan bases separadas. La sesión docente del navegador requiere volver a iniciar sesión tras recargar, por lo que no se verificó visualmente la matriz autenticada en esta publicación.
 
