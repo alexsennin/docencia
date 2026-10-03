@@ -2,6 +2,12 @@
 
 Fecha de actualización: 2026-10-02.
 
+## Acciones individuales en la matriz de Exámenes (2026-10-02)
+
+Implementación local: cada alumno muestra el estado del intento en una fila y sus acciones debajo. `Editar calificación` abre un modal individual con la respuesta y el puntaje por reactivo; el ajuste guarda sólo puntos, motivo, actor y auditoría en columnas manuales nuevas, manteniendo respuesta y clasificación correcta/incorrecta. `Re-evaluar` aparece sólo para ese alumno cuando hay respuestas abiertas con IA pendientes. `Finalizar examen` confirma el alumno, identifica cuántas respuestas quedaron autoguardadas y procesa el intento activo/bloqueado con la ruta ordinaria de evaluación.
+
+Validación local aislada: `test:exam-attempt` pasó contra PostgreSQL temporal con alumno/intento sintéticos; TypeScript, ESLint y `git diff --check` pasaron. El navegador local confirmó las dos filas, estado `Bloqueado; sin enviar`, botón individual `Finalizar examen`, botón `Re-evaluar (1)` para un intento provisional y el modal de puntajes con motivo obligatorio. No se escribió información escolar real ni se llamó al proveedor IA durante las pruebas. La migración aditiva `0006` pasó en una rama temporal de Neon y expuso ambas columnas con los tipos y nulabilidad esperados. Neon Production aún no se modificó; la aprobación explícita para aplicarla está pendiente y Vercel espera ese cambio de esquema.
+
 ## Matriz de respuestas, puntajes y envíos incompletos (2026-10-02)
 
 La revisión posterior de Producción encontró 17 intentos Definitivos de 2.º B con 153 respuestas, 136 automáticas sin puntaje por pregunta persistido y 16 evaluaciones IA completadas sin error. Los falsos `Pendiente` venían de leer el campo nulo de la respuesta automática, aunque el motor calculaba el resultado final del alumno correctamente. El reporte docente ahora usa ese mismo motor para los intentos entregados; consultar no modifica sus respuestas ni calificaciones históricas. Los nuevos envíos persisten además los puntajes por reactivo.

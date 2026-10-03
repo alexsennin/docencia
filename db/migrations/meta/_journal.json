@@ -43,6 +43,13 @@
       "when": 1790826739031,
       "tag": "0005_unique_grade_snapshot_per_student_partial",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790990925900,
+      "tag": "0006_mute_lady_vermin",
+      "breakpoints": true
     }
   ]
 }

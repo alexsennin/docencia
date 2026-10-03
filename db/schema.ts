@@ -308,6 +308,8 @@ export const examAnswers = pgTable(
     answer: text("respuesta"),
     status: text("estado_respuesta"),
     score: numeric("puntaje_obtenido"),
+    manualScore: numeric("puntaje_manual"),
+    manualScoreUpdatedAt: instant("puntaje_manual_updated_at"),
     evaluationMethod: text("metodo_evaluacion"),
     feedback: text("retroalimentacion"),
     aiStatus: text("ai_estado"),

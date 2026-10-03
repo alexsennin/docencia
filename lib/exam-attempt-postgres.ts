@@ -128,15 +128,21 @@ function resultFromRows(
     const answer = answers[question.id];
     const empty = answer === undefined || answer === "" || (Array.isArray(answer) && answer.every((item) => !item));
     if (question.evaluationMethod !== "ai") {
-      return automatic.items.find((item) => item.questionId === question.id)!;
+      const item = automatic.items.find((candidate) => candidate.questionId === question.id)!;
+      return saved?.manualScore == null ? item : { ...item, score: Number(saved.manualScore) };
     }
     if (empty) return { questionId: question.id, order: question.order, maxScore: question.maxScore, score: 0, status: "sin_respuesta" as const, feedback: "No se registró una respuesta." };
     const evaluation = evaluationByQuestion.get(question.id);
     if (!evaluation || evaluation.status !== "Evaluada") {
+      if (saved?.manualScore != null) {
+        const score = Number(saved.manualScore);
+        aiScore += Number.isFinite(score) ? score : 0;
+        return { questionId: question.id, order: question.order, maxScore: question.maxScore, score, status: "correcta" as const, feedback: saved.feedback ?? "Calificación ajustada por la docente." };
+      }
       aiPending = true;
       return { questionId: question.id, order: question.order, maxScore: question.maxScore, score: null, status: "pendiente_ia" as const, feedback: "Respuesta pendiente de evaluación con IA o revisión docente." };
     }
-    const score = Number(evaluation.score ?? saved?.score ?? 0);
+    const score = Number(saved?.manualScore ?? evaluation.score ?? saved?.score ?? 0);
     aiScore += Number.isFinite(score) ? score : 0;
     const detail = evaluation.breakdown && typeof evaluation.breakdown === "object"
       ? evaluation.breakdown as { feedback?: unknown; strengths?: unknown; opportunities?: unknown }
@@ -704,6 +710,126 @@ export async function reevaluateOpenAnswerInPostgres(
   });
 }
 
+export async function updateManualExamScoresInPostgres(input: {
+  attemptId?: string;
+  scores?: Array<{ questionId?: string; score?: number }>;
+  reason?: string;
+}, now = new Date()) {
+  const attemptId = String(input.attemptId ?? "").trim();
+  const scores = Array.isArray(input.scores) ? input.scores : [];
+  const reason = String(input.reason ?? "").trim();
+  if (!attemptId || !scores.length || !reason) throw new ExamWorkflowError("Selecciona puntajes y escribe el motivo del ajuste.");
+  if (scores.length > 100 || reason.length > 500) throw new ExamWorkflowError("La solicitud de ajuste excede el tamaño permitido.");
+  const submitted = new Map<string, number>();
+  for (const item of scores) {
+    const questionId = String(item.questionId ?? "").trim();
+    const score = Number(item.score);
+    if (!questionId || !Number.isFinite(score) || submitted.has(questionId)) throw new ExamWorkflowError("Revisa los puntajes ingresados.");
+    submitted.set(questionId, score);
+  }
+  const db = getDatabase();
+  const [snapshot] = await db.select().from(examAttempts).where(eq(examAttempts.id, attemptId)).limit(1);
+  if (!snapshot) throw new ExamWorkflowError("No se encontró el intento.", 404);
+  const exam = await loadExamDefinition(snapshot.examId, false);
+  if (!exam) throw new ExamWorkflowError("No se encontró el examen.", 404);
+  return db.transaction(async (tx) => {
+    const [attempt] = await tx.select().from(examAttempts).where(eq(examAttempts.id, attemptId)).for("update").limit(1);
+    if (!attempt) throw new ExamWorkflowError("No se encontró el intento.", 404);
+    if (attempt.examId !== snapshot.examId) throw new ExamWorkflowError("El intento cambió mientras se editaba.", 409);
+    if (!["Definitivo", "Provisional"].includes(String(attempt.status))) throw new ExamWorkflowError("Finaliza el examen antes de editar sus puntajes.", 409);
+    const questions = new Map(exam.questions.map((question) => [question.id, question]));
+    const answers = await tx.select().from(examAnswers).where(eq(examAnswers.attemptId, attemptId));
+    const answerByQuestion = new Map(answers.map((answer) => [answer.questionId, answer]));
+    for (const [questionId, score] of submitted) {
+      const question = questions.get(questionId);
+      const answer = answerByQuestion.get(questionId);
+      if (!question || !answer) throw new ExamWorkflowError("Sólo puedes ajustar reactivos con respuesta guardada.", 400);
+      if (score < 0 || score > question.maxScore) throw new ExamWorkflowError(`El puntaje de la pregunta ${question.order} debe estar entre 0 y ${question.maxScore}.`);
+    }
+    const occurredAt = now.toISOString();
+    const changes: Array<{ questionId: string; previousScore: number | null; score: number }> = [];
+    for (const [questionId, score] of submitted) {
+      const answer = answerByQuestion.get(questionId)!;
+      changes.push({ questionId, previousScore: answer.manualScore == null ? answer.score == null ? null : Number(answer.score) : Number(answer.manualScore), score });
+      await tx.update(examAnswers).set({ manualScore: String(score), manualScoreUpdatedAt: occurredAt, updatedAt: occurredAt })
+        .where(and(eq(examAnswers.attemptId, attemptId), eq(examAnswers.questionId, questionId)));
+    }
+    const updatedAnswers = await tx.select().from(examAnswers).where(eq(examAnswers.attemptId, attemptId));
+    const evaluationRows = await tx.select().from(aiEvaluations).where(eq(aiEvaluations.attemptId, attemptId));
+    const result = resultFromRows(attempt, exam, updatedAnswers, evaluationRows);
+    const status = result.aiPending ? "Provisional" : "Definitivo";
+    await tx.update(examAttempts).set({
+      status, automaticScore: String(result.automaticScore), aiScore: String(result.aiScore ?? 0),
+      totalScore: result.totalScore === null ? null : String(result.totalScore),
+      gradeOnTen: result.grade10 === null ? null : String(result.grade10), aiPending: result.aiPending, updatedAt: occurredAt,
+    }).where(eq(examAttempts.id, attemptId));
+    await tx.insert(auditEvents).values({
+      id: `event-${randomUUID()}`, type: "exam_manual_scores_updated", entity: "INTENTOS", entityId: attemptId,
+      partialId: attempt.partialId, studentId: attempt.studentId, actorId: "docente",
+      details: { reason, changes }, occurredAt,
+    });
+    return { attemptId, partialId: attempt.partialId, result, status };
+  });
+}
+
+export async function finalizeExamAttemptByTeacherInPostgres(input: { attemptId?: string }, now = new Date()) {
+  const attemptId = String(input.attemptId ?? "").trim();
+  if (!attemptId) throw new ExamWorkflowError("Selecciona un intento para finalizar.");
+  const db = getDatabase();
+  const [snapshot] = await db.select().from(examAttempts).where(eq(examAttempts.id, attemptId)).limit(1);
+  if (!snapshot) throw new ExamWorkflowError("No se encontró el intento.", 404);
+  const exam = await loadExamDefinition(snapshot.examId, false);
+  if (!exam) throw new ExamWorkflowError("No se encontró el examen.", 404);
+  const accepted = await db.transaction(async (tx) => {
+    const [attempt] = await tx.select().from(examAttempts).where(eq(examAttempts.id, attemptId)).for("update").limit(1);
+    if (!attempt) throw new ExamWorkflowError("No se encontró el intento.", 404);
+    if (attempt.examId !== snapshot.examId) throw new ExamWorkflowError("El intento cambió mientras se finalizaba.", 409);
+    if (["Definitivo", "Provisional"].includes(String(attempt.status))) return { attempt, alreadyFinal: true } as const;
+    if (!["Activo", "Bloqueado", "Evaluando"].includes(String(attempt.status))) throw new ExamWorkflowError("El intento no se puede finalizar.", 409);
+    const answers = await tx.select().from(examAnswers).where(eq(examAnswers.attemptId, attemptId));
+    const saved = new Map(answers.map((answer) => [answer.questionId, answer]));
+    const finalizedAt = now.toISOString();
+    for (const question of exam.questions) {
+      const previous = saved.get(question.id);
+      const value = previous ? parseStoredAnswer(previous.answer) : "";
+      const hasAnswer = Array.isArray(value) ? value.some((item) => item.trim()) : value.trim().length > 0;
+      const fields = {
+        answer: previous?.answer ?? "", status: hasAnswer ? "Respondida" : "Sin_respuesta",
+        evaluationMethod: question.evaluationMethod, feedback: hasAnswer ? previous?.feedback ?? null : "No se registró una respuesta.",
+        aiStatus: question.evaluationMethod === "ai" && hasAnswer ? "Pendiente" : "Evaluada", updatedAt: finalizedAt,
+      };
+      if (previous) await tx.update(examAnswers).set(fields).where(and(eq(examAnswers.attemptId, attemptId), eq(examAnswers.questionId, question.id)));
+      else await tx.insert(examAnswers).values({
+        id: `answer-${randomUUID()}`, attemptId, questionId: question.id, studentId: attempt.studentId,
+        score: question.evaluationMethod === "ai" && hasAnswer ? null : "0", ...fields,
+      });
+      if (question.evaluationMethod === "ai" && hasAnswer) {
+        await tx.insert(aiEvaluations).values({
+          id: `ai-${randomUUID()}`, attemptId, questionId: question.id, model: process.env.GEMINI_MODEL || "gemini-3.6-flash",
+          promptVersion: "1.0", input: { answer: value, rubric: question.rubric ?? null }, status: "Pendiente",
+        }).onConflictDoNothing({ target: [aiEvaluations.attemptId, aiEvaluations.questionId] });
+      }
+    }
+    const [updated] = await tx.update(examAttempts).set({ status: "Evaluando", finishedAt: attempt.finishedAt ?? finalizedAt, locked: false, lockedAt: null, updatedAt: finalizedAt })
+      .where(eq(examAttempts.id, attemptId)).returning();
+    await tx.insert(auditEvents).values({
+      id: `event-${randomUUID()}`, type: "exam_teacher_finalization_accepted", entity: "INTENTOS", entityId: attemptId,
+      partialId: attempt.partialId, studentId: attempt.studentId, actorId: "docente",
+      details: { previousStatus: attempt.status, savedAnswers: answers.filter((answer) => String(answer.answer ?? "").trim()).length }, occurredAt: finalizedAt,
+    });
+    return { attempt: updated ?? attempt, alreadyFinal: false } as const;
+  });
+  if (accepted.alreadyFinal) {
+    const [answers, evaluations] = await Promise.all([
+      db.select().from(examAnswers).where(eq(examAnswers.attemptId, attemptId)),
+      db.select().from(aiEvaluations).where(eq(aiEvaluations.attemptId, attemptId)),
+    ]);
+    return { result: resultFromRows(accepted.attempt, exam, answers, evaluations), partialId: accepted.attempt.partialId, status: accepted.attempt.status };
+  }
+  const finalized = await submitExamAttemptInPostgres({ attemptId, examId: accepted.attempt.examId, studentId: accepted.attempt.studentId, answers: {} });
+  return { ...finalized, partialId: accepted.attempt.partialId };
+}
+
 export async function getTeacherExamResultsInPostgres(options: { includeInProgress?: boolean } = {}) {
   const db = getDatabase();
   const [studentRows, allExamRows, assignmentRows, attemptRows] = await Promise.all([
@@ -812,6 +938,9 @@ export async function getTeacherExamResultsInPostgres(options: { includeInProgre
             questionId: answer.questionId,
             answer: Array.isArray(savedAnswer) ? savedAnswer.join(", ") : savedAnswer,
             score: completed ? evaluated?.score ?? null : null,
+            manualScore: answer.manualScore == null ? null : Number(answer.manualScore),
+            maxScore: Number(question?.maxScore ?? 0),
+            scoreSource: answer.manualScore == null ? question?.evaluationMethod === "ai" ? "IA" : "Automática" : "Manual",
             feedback: evaluated?.feedback ?? (ai?.status === "Evaluada" ? ai.feedback ?? answer.feedback ?? "" : answer.feedback ?? ""),
             status: !completed ? "Guardada; sin evaluar" : evaluated?.status === "pendiente_ia" || aiPending && evaluated?.score == null ? "Pendiente"
               : question?.evaluationMethod === "ai" && ai?.status === "Evaluada" ? "Evaluada" : evaluated?.status ?? answer.aiStatus ?? answer.status ?? "",

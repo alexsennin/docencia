@@ -3,7 +3,7 @@ import test, { after } from "node:test";
 import { and, eq, inArray } from "drizzle-orm";
 import { closeDatabaseForTests, getDatabase } from "../db/client.ts";
 import { aiEvaluations, auditEvents, examAnswers, examAssignments, examAttempts, examQuestions, exams, grades } from "../db/schema.ts";
-import { getTeacherExamResultsInPostgres, reevaluateOpenAnswerInPostgres, revokeExamAttemptsInPostgres, saveExamAnswersInPostgres, startExamAttemptInPostgres, submitExamAttemptInPostgres, unlockExamAttemptInPostgres } from "../lib/exam-attempt-postgres.ts";
+import { finalizeExamAttemptByTeacherInPostgres, getTeacherExamResultsInPostgres, reevaluateOpenAnswerInPostgres, revokeExamAttemptsInPostgres, saveExamAnswersInPostgres, startExamAttemptInPostgres, submitExamAttemptInPostgres, unlockExamAttemptInPostgres, updateManualExamScoresInPostgres } from "../lib/exam-attempt-postgres.ts";
 
 const baseUrl = process.env.E2E_BASE_URL || "http://127.0.0.1:13000";
 const examId = "SYNTH-EXAM-ATTEMPT-001";
@@ -12,6 +12,8 @@ const aiExamId = "SYNTH-EXAM-ATTEMPT-AI-001";
 const aiQuestionId = "SYNTH-QUESTION-ATTEMPT-AI-001";
 const revokeExamId = "SYNTH-EXAM-ATTEMPT-REVOKE-001";
 const revokeQuestionId = "SYNTH-QUESTION-ATTEMPT-REVOKE-001";
+const finalizeExamId = "SYNTH-EXAM-ATTEMPT-FINALIZE-001";
+const finalizeQuestionId = "SYNTH-QUESTION-ATTEMPT-FINALIZE-001";
 const studentId = "SYNTH-001";
 let originalGradeRows;
 let originalAuditEventIds;
@@ -26,7 +28,7 @@ async function post(path, body) {
 
 async function cleanFixture() {
   const db = getDatabase();
-  const fixtureExamIds = [examId, aiExamId, revokeExamId];
+  const fixtureExamIds = [examId, aiExamId, revokeExamId, finalizeExamId];
   const attempts = await db.select({ id: examAttempts.id }).from(examAttempts).where(inArray(examAttempts.examId, fixtureExamIds));
   const attemptIds = attempts.map((row) => row.id);
   await db.delete(auditEvents).where(inArray(auditEvents.entityId, [...attemptIds, revokeExamId]));
@@ -52,7 +54,7 @@ async function cleanFixture() {
     if (newEventIds.length) await db.delete(auditEvents).where(inArray(auditEvents.id, newEventIds));
   }
   await db.delete(examAssignments).where(inArray(examAssignments.examId, fixtureExamIds));
-  await db.delete(examQuestions).where(inArray(examQuestions.id, [questionId, aiQuestionId, revokeQuestionId]));
+  await db.delete(examQuestions).where(inArray(examQuestions.id, [questionId, aiQuestionId, revokeQuestionId, finalizeQuestionId]));
   await db.delete(exams).where(inArray(exams.id, fixtureExamIds));
 }
 
@@ -141,6 +143,35 @@ test("intento de examen Postgres: autorización, reanudación, autosave, bloqueo
   assert.equal(legacyReport.answers[0].score, 10, "los exámenes ya entregados recuperan el puntaje del mismo motor del alumno");
   const [unmodifiedLegacyAnswer] = await db.select().from(examAnswers).where(eq(examAnswers.id, scoredAnswer.id));
   assert.equal(unmodifiedLegacyAnswer.score, null, "consultar el desglose no modifica datos históricos");
+
+  const manuallyGraded = await updateManualExamScoresInPostgres({
+    attemptId: started.attemptId, scores: [{ questionId, score: 4 }], reason: "Ajuste sintético para comprobar edición docente.",
+  });
+  assert.equal(manuallyGraded.result.items[0].score, 4);
+  assert.equal(manuallyGraded.result.items[0].status, "correcta", "el ajuste de puntos no altera si la respuesta fue correcta");
+  const [manualAnswer] = await db.select().from(examAnswers).where(eq(examAnswers.id, scoredAnswer.id));
+  assert.equal(Number(manualAnswer.manualScore), 4);
+  assert.equal(manualAnswer.answer, "A", "la edición de puntaje conserva la respuesta original");
+  assert.ok((await db.select().from(auditEvents).where(and(eq(auditEvents.type, "exam_manual_scores_updated"), eq(auditEvents.entityId, started.attemptId)))).length);
+
+  await db.insert(exams).values({
+    id: finalizeExamId, partialId: "SYNTH-P1", name: "Examen sintético para finalización docente", subject: "Español",
+    grade: "1", group: "A", status: "Publicado", durationMinutes: 30, maxScore: "10",
+    requiresFullscreen: false, instructions: "Prueba local con información ficticia.", createdAt: now, updatedAt: now,
+  });
+  await db.insert(examQuestions).values({
+    id: finalizeQuestionId, examId: finalizeExamId, order: 1, topic: "Prueba", type: "opcion_multiple", prompt: "Reactivo guardado sintético",
+    options: ["A", "B"], correctAnswer: "A", maxScore: "10", evaluationMethod: "automatic", active: true,
+  });
+  const pendingTeacherFinalize = await startExamAttemptInPostgres({ studentId, examId: finalizeExamId });
+  await saveExamAnswersInPostgres({ attemptId: pendingTeacherFinalize.attemptId, examId: finalizeExamId, studentId, answers: { [finalizeQuestionId]: "A" } });
+  await db.update(examAttempts).set({ status: "Bloqueado", locked: true, lockedAt: now }).where(eq(examAttempts.id, pendingTeacherFinalize.attemptId));
+  const teacherFinalized = await finalizeExamAttemptByTeacherInPostgres({ attemptId: pendingTeacherFinalize.attemptId });
+  assert.equal(teacherFinalized.result.grade10, 10);
+  assert.equal(teacherFinalized.result.items[0].score, 10);
+  const [finalizedAttempt] = await db.select().from(examAttempts).where(eq(examAttempts.id, pendingTeacherFinalize.attemptId));
+  assert.equal(finalizedAttempt.status, "Definitivo");
+  assert.ok((await db.select().from(auditEvents).where(and(eq(auditEvents.type, "exam_teacher_finalization_accepted"), eq(auditEvents.entityId, pendingTeacherFinalize.attemptId)))).length);
 
   await db.insert(exams).values({
     id: aiExamId, partialId: "SYNTH-P1", name: "Examen sintético con respuesta abierta", subject: "Español",

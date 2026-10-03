@@ -1,8 +1,10 @@
 # Trabajo pendiente verificable
 
-## Estado vigente al 2026-10-01
+## Estado vigente al 2026-10-02
 
 El corte solicitado a Neon ya está activo. Pendiente operativo: obtener y probar un respaldo independiente de Neon; este plan no permitió habilitar snapshots programados. El snapshot manual actual está en Neon y el backup local cifrado se restauró en Docker temporal, pero no hay una copia independiente fuera de este equipo. La instrucción del 2026-10-02 autoriza corregir el desglose de exámenes y sincronizar Local, Producción y GitHub (DEC-012). No implica sincronizar sus bases de datos. Los hitos anteriores de MVP local que siguen abajo son históricos.
+
+Acciones individuales de la matriz de Exámenes: la implementación y prueba local están listas; migración aditiva probada en una rama temporal de Neon. Falta aprobación para modificar el esquema de Neon Production y después publicar/verificar Vercel. GitHub permanece pausado para este alcance; no hacer commit/push sin autorización nueva.
 
 Mejora propuesta 2026-10-02: agregar un actualizador controlado del padrón desde Excel. La plantilla debe incluir una hoja `Alumnos` y columnas `id`, `nombre`, `nivel`, `grado`, `grupo` y `ciclo_escolar`; el ID escolar es la clave de coincidencia y no se cambia desde el archivo. `asignacion` y `hoja_origen` son metadatos administrados por el sistema, no campos editables de la plantilla. La importación debe validar encabezados, campos requeridos, tipos y duplicados; mostrar una vista previa de altas, cambios y conflictos antes de guardar; y aplicar el lote confirmado en una transacción con auditoría. Las coincidencias por ID actualizan sólo los campos permitidos. Los IDs desconocidos se proponen como alumnos nuevos y se insertan sólo tras confirmación explícita; filas omitidas del Excel nunca eliminan ni desactivan alumnos. IDs repetidos, ID vacío, grado/grupo/ciclo inválidos o discrepancias que no se puedan resolver automáticamente bloquean esas filas y requieren corrección. No implica sincronización automática con Sheets/Apps Script: Neon Production es el padrón activo.
 

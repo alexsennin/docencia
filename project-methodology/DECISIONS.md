@@ -105,3 +105,12 @@ El usuario indicó incluir retardos del periodo además de comentarios. La versi
 - **Decisión:** corregir el acceso al desglose desde la matriz de Exámenes y publicar la misma fuente funcional en Local, Vercel Production y el repositorio privado GitHub, incluida la implementación PostgreSQL preexistente necesaria para reproducir el deployment.
 - **Alcance:** esta tarea autoriza commit y push y sustituye la pausa de GitHub para la sincronización solicitada. No autoriza sincronizar bases de datos, reevaluar respuestas, retirar el legado ni subir datos escolares o secretos.
 - **Validación:** lectura autenticada de 2.º B, comprobación visual del detalle, validaciones locales y verificación del deployment y SHA remoto.
+
+## DEC-013 — Corregir y finalizar intentos por alumno en la matriz de Exámenes
+
+- **Fecha / estado:** 2026-10-02 · Alcance funcional solicitado; implementación local verificada, publicación pendiente.
+- **Decisión:** separar en la matriz estado del intento, su valor y acciones por alumno. `Editar calificación` abre el desglose individual y guarda únicamente puntos por reactivo, junto con motivo/auditoría, sin reescribir respuesta ni estado correcto/incorrecto. `Re-evaluar` queda disponible sólo para respuestas IA pendientes y se ejecuta individualmente. `Finalizar examen` procesa un intento activo/bloqueado con las respuestas autoguardadas; las respuestas abiertas no vacías se someten al flujo normal de IA.
+- **Razón:** permitir recuperar entregas interrumpidas y resolver calificaciones puntuales sin volver a evaluar respuestas que ya revisó la docente.
+- **Consecuencias:** dos columnas nuevas aditivas guardan el puntaje manual y su fecha. La aplicación local temporal confirmó matriz y modal por alumno; la migración Neon fue probada en una rama temporal. Requiere aprobación antes de modificar la rama productiva; el deployment Vercel espera la migración.
+- **Alcance:** matriz docente de exámenes en PostgreSQL. No sincroniza bases local y productiva ni autoriza nueva publicación de código a GitHub.
+- **Referencias:** `components/teacher-exam-grade-matrix.tsx`, `lib/exam-attempt-postgres.ts`, migración `0006_mute_lady_vermin.sql`.
