@@ -187,7 +187,7 @@ export function TeacherExamGradeMatrix({ active, partialId, partialName }: { act
         const selectedAnswers = new Map((selectedAttempt?.answers ?? []).map((answer) => [answer.questionId, answer]));
         return <section className="academic-card exam-grade-matrix-card" key={exam.examId} aria-label={`Matriz de ${exam.examName}`}>
           <div className="academic-matrix-header"><div><p className="eyebrow">{group} · {partialName}</p><h2>{exam.examName}</h2></div><span className="result-count">{exam.questions.length} preguntas · {attempts.size} con intento</span></div>
-          {!exam.questions.length ? <p className="dashboard-empty">Este examen no tiene preguntas activas.</p> : <div className="matrix-scroll"><table className="academic-matrix exam-grade-matrix-table"><thead><tr><th>ID</th><th>Nombre del alumno</th><th>Estado y detalle</th>{exam.questions.map((question) => <th key={question.questionId} title={question.prompt || question.questionId}>Pregunta {question.order}</th>)}</tr></thead><tbody>
+          {!exam.questions.length ? <p className="dashboard-empty">Este examen no tiene preguntas activas.</p> : <div className="matrix-scroll"><table className="academic-matrix exam-grade-matrix-table"><thead><tr><th>ID</th><th>Nombre del alumno</th><th>Estado y detalle</th>{exam.questions.map((question) => <th key={question.questionId} title={question.prompt || question.questionId}>P{question.order}</th>)}</tr></thead><tbody>
             {groupStudents.map((student) => {
               const attempt = attempts.get(student.studentId);
               const answers = new Map((attempt?.answers ?? []).map((answer) => [answer.questionId, answer]));
@@ -201,7 +201,7 @@ export function TeacherExamGradeMatrix({ active, partialId, partialName }: { act
                 const grade = !answer ? "—" : !completed ? "Sin evaluar" : answer.score === null
                   ? "Pendiente de evaluación"
                   : `${formatPoints(answer.score)} / ${formatPoints(question.maxScore)}`;
-                return <td key={question.questionId} title={answer?.status || (attempt ? "Sin respuesta guardada" : "Sin intento")}><span className="exam-matrix-answer">{answer ? answer.answer || "Sin respuesta" : "—"}</span>{answer && <small className="exam-matrix-score">{grade}</small>}</td>;
+                return <td key={question.questionId} title={answer?.status || (attempt ? "Sin respuesta guardada" : "Sin intento")}><div className="exam-matrix-answer-line"><span className="exam-matrix-answer">{answer ? answer.answer || "Sin respuesta" : "—"}</span>{answer && <small className="exam-matrix-score">, {grade.replace(/\s*\/\s*/g, "/")}</small>}</div></td>;
               })}</tr>;
             })}
           </tbody></table></div>}

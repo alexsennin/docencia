@@ -432,8 +432,10 @@ h2 { margin-bottom: 0; color: #1b2a43; font-size: 1.2rem; letter-spacing: -.025e
 .exam-grade-matrix-module, .exam-grade-matrix-list { display: grid; gap: 12px; }
 .exam-grade-matrix-card { min-width: 0; }
 .exam-answer-text { white-space: pre-wrap; overflow-wrap: anywhere; }
-.exam-matrix-answer { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; max-width: 190px; white-space: pre-wrap; overflow-wrap: anywhere; text-align: left; }
-.exam-matrix-score, .exam-matrix-state { display: block; margin-top: 5px; color: var(--muted); font-size: .7rem; }
+.exam-matrix-answer-line { display: flex; align-items: baseline; gap: 3px; min-width: 0; max-width: 100%; white-space: normal; text-align: left; }
+.exam-matrix-answer { display: -webkit-box; flex: 0 1 auto; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; min-width: 0; max-width: 190px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.exam-matrix-score { flex: 0 0 auto; color: var(--muted); font-size: .7rem; white-space: nowrap; }
+.exam-matrix-state { display: block; margin-top: 5px; color: var(--muted); font-size: .7rem; }
 .exam-matrix-state-label { display: block; margin-bottom: 3px; color: var(--muted); font-size: .56rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
 .exam-matrix-status-cell { min-width: 205px; vertical-align: top; white-space: normal; }
 .exam-matrix-status-cell .exam-matrix-state { margin: 0; padding: 2px 0 7px; border-bottom: 1px solid #e8edf3; color: #263750; }
