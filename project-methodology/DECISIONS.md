@@ -108,9 +108,9 @@ El usuario indicó incluir retardos del periodo además de comentarios. La versi
 
 ## DEC-013 — Corregir y finalizar intentos por alumno en la matriz de Exámenes
 
-- **Fecha / estado:** 2026-10-02 · Alcance funcional solicitado; implementación local verificada, publicación pendiente.
+- **Fecha / estado:** 2026-10-02 · Implementada, publicada y verificada.
 - **Decisión:** separar en la matriz estado del intento, su valor y acciones por alumno. `Editar calificación` abre el desglose individual y guarda únicamente puntos por reactivo, junto con motivo/auditoría, sin reescribir respuesta ni estado correcto/incorrecto. `Re-evaluar` queda disponible sólo para respuestas IA pendientes y se ejecuta individualmente. `Finalizar examen` procesa un intento activo/bloqueado con las respuestas autoguardadas; las respuestas abiertas no vacías se someten al flujo normal de IA.
 - **Razón:** permitir recuperar entregas interrumpidas y resolver calificaciones puntuales sin volver a evaluar respuestas que ya revisó la docente.
-- **Consecuencias:** dos columnas nuevas aditivas guardan el puntaje manual y su fecha. La aplicación local temporal confirmó matriz y modal por alumno; la migración Neon fue probada en una rama temporal. Requiere aprobación antes de modificar la rama productiva; el deployment Vercel espera la migración.
-- **Alcance:** matriz docente de exámenes en PostgreSQL. No sincroniza bases local y productiva ni autoriza nueva publicación de código a GitHub.
+- **Consecuencias:** dos columnas nuevas aditivas guardan el puntaje manual y su fecha. Neon Production recibió la migración probada y verificada; Vercel Production y GitHub `main` quedaron actualizados.
+- **Alcance:** matriz docente de exámenes en PostgreSQL. No sincroniza las bases de datos local y productiva.
 - **Referencias:** `components/teacher-exam-grade-matrix.tsx`, `lib/exam-attempt-postgres.ts`, migración `0006_mute_lady_vermin.sql`.
