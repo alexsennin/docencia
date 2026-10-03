@@ -1,10 +1,14 @@
 # Estado actual
 
-Fecha de actualización: 2026-10-02.
+Fecha de actualización: 2026-10-03.
+
+## Acomodo de la matriz de Exámenes (2026-10-03)
+
+La tabla usa una sola fila por alumno. En `Estado y detalle`, el estado queda separado de sus controles por una línea; las respuestas y puntajes continúan en las columnas de cada pregunta. Los flujos individuales de ver, editar, re-evaluar y finalizar permanecen en esa celda.
 
 ## Acciones individuales en la matriz de Exámenes (2026-10-02)
 
-Implementación: cada alumno muestra el estado del intento en una fila y sus acciones debajo. `Editar calificación` abre un modal individual con la respuesta completa y el puntaje por reactivo; el ajuste guarda sólo puntos, motivo, actor y auditoría en columnas manuales nuevas, manteniendo respuesta y clasificación correcta/incorrecta. `Re-evaluar` aparece sólo para ese alumno cuando hay respuestas abiertas con IA pendientes. `Finalizar examen` confirma el alumno, identifica cuántas respuestas quedaron autoguardadas y procesa el intento activo/bloqueado con la ruta ordinaria de evaluación.
+Implementación: cada alumno ocupa una sola fila; la celda `Estado y detalle` separa visualmente el estado del intento y sus acciones, seguida por las respuestas y puntajes por reactivo. `Editar calificación` abre un modal individual con la respuesta completa y el puntaje por reactivo; el ajuste guarda sólo puntos, motivo, actor y auditoría en columnas manuales nuevas, manteniendo respuesta y clasificación correcta/incorrecta. `Re-evaluar` aparece sólo para ese alumno cuando hay respuestas abiertas con IA pendientes. `Finalizar examen` confirma el alumno, identifica cuántas respuestas quedaron autoguardadas y procesa el intento activo/bloqueado con la ruta ordinaria de evaluación.
 
 Validación: `test:exam-attempt` pasó contra PostgreSQL temporal con alumno/intento sintéticos; TypeScript, ESLint y `git diff --check` pasaron (16 advertencias conocidas del puente Apps Script, cero errores). El navegador local confirmó las dos filas, estado `Bloqueado; sin enviar`, botón individual `Finalizar examen`, botón `Re-evaluar (1)` para un intento provisional y el modal de puntajes con motivo obligatorio. La migración aditiva `0006` pasó en rama temporal y se aplicó a Docker local y Neon Production; las columnas y el hash de Drizzle se verificaron en ambas bases. Vercel `dpl_ErgWvY6V7WH2qkQZCWqTaZSLpqeb` quedó READY con alias `https://docencia.integratech.app`. El dominio respondió 200 y la API docente sin sesión respondió 401. La matriz productiva de 2.º B volvió a cargar con 19 intentos; esta verificación no modificó respuestas ni calificaciones reales.
 

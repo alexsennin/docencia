@@ -435,10 +435,11 @@ h2 { margin-bottom: 0; color: #1b2a43; font-size: 1.2rem; letter-spacing: -.025e
 .exam-matrix-answer { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; max-width: 190px; white-space: pre-wrap; overflow-wrap: anywhere; text-align: left; }
 .exam-matrix-score, .exam-matrix-state { display: block; margin-top: 5px; color: var(--muted); font-size: .7rem; }
 .exam-matrix-state-label { display: block; margin-bottom: 3px; color: var(--muted); font-size: .56rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
-.exam-grade-matrix-status-row td, .exam-grade-matrix-status-row th { padding-top: 12px; padding-bottom: 7px; border-bottom: 0; vertical-align: bottom; }
-.exam-grade-matrix-actions-row td { padding-top: 5px; padding-bottom: 12px; border-bottom: 2px solid #e8edf3; text-align: left !important; vertical-align: top; }
+.exam-matrix-status-cell { min-width: 205px; vertical-align: top; white-space: normal; }
+.exam-matrix-status-cell .exam-matrix-state { margin: 0; padding: 2px 0 7px; border-bottom: 1px solid #e8edf3; color: #263750; }
 .exam-matrix-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 13px; }
-.exam-matrix-actions .text-button { padding: 0; font-size: .62rem; }
+.exam-matrix-status-cell .exam-matrix-actions { padding-top: 7px; }
+.exam-matrix-actions .text-button { padding: 0; font-size: .62rem; text-align: left; }
 .exam-score-dialog { width: min(720px, 100%); }
 .exam-score-editor { display: grid; gap: 7px; max-height: 42vh; overflow: auto; margin: 15px 0; }
 .exam-score-editor > label { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; font-size: .67rem; }
@@ -453,6 +454,7 @@ h2 { margin-bottom: 0; color: #1b2a43; font-size: 1.2rem; letter-spacing: -.025e
 .exam-grade-matrix-table th:first-child, .exam-grade-matrix-table td:first-child { min-width: 88px; }
 .exam-grade-matrix-table th:nth-child(2), .exam-grade-matrix-table td:nth-child(2) { min-width: 190px; }
 .exam-grade-matrix-table th:nth-child(n+3), .exam-grade-matrix-table td:nth-child(n+3) { min-width: 100px; text-align: center; font-variant-numeric: tabular-nums; }
+.exam-grade-matrix-table th:nth-child(3), .exam-grade-matrix-table td:nth-child(3) { min-width: 205px; text-align: left; font-variant-numeric: normal; }
 .matrix-card .schema-note { display: block; margin-top: 10px; color: var(--muted); font-size: .61rem; }
 .ai-report-review { display: grid; gap: 7px; margin-top: 14px; padding: 12px; border: 1px solid #dceee9; border-radius: 9px; background: #f6fcfa; color: #42566a; font-size: .66rem; line-height: 1.5; }
 .ai-report-review p { margin: 0; }

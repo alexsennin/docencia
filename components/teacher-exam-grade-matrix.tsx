@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ProgressOverlay } from "./progress-overlay";
 
 type ExamQuestion = { questionId: string; order: number; maxScore: number; prompt?: string };
@@ -193,19 +193,16 @@ export function TeacherExamGradeMatrix({ active, partialId, partialName }: { act
               const answers = new Map((attempt?.answers ?? []).map((answer) => [answer.questionId, answer]));
               const completed = attempt?.status === "Definitivo" || attempt?.status === "Provisional";
               const pendingAiCount = attempt?.answers.filter((answer) => answer.status.toLowerCase() === "pendiente" && answer.answer.trim()).length ?? 0;
-              return <Fragment key={student.studentId}>
-                <tr key={`${student.studentId}-status`} className="exam-grade-matrix-status-row"><td rowSpan={2}>{student.studentId}</td><th scope="row" rowSpan={2}>{student.studentName}</th><td><span className="exam-matrix-state-label">Estado del intento</span><strong className="exam-matrix-state">{attempt ? attempt.submissionState || attempt.status : "Sin intento"}</strong></td>{exam.questions.map((question) => {
+              return <tr key={student.studentId} className="exam-grade-matrix-row"><td>{student.studentId}</td><th scope="row">{student.studentName}</th><td className="exam-matrix-status-cell"><span className="exam-matrix-state-label">Estado del intento</span><strong className="exam-matrix-state">{attempt ? attempt.submissionState || attempt.status : "Sin intento"}</strong><div className="exam-matrix-actions">{attempt && <button type="button" className="text-button" id={`exam-detail-trigger-${attempt.attemptId}`} aria-label={`Ver respuestas de ${student.studentName} en ${exam.examName}`} aria-expanded={selectedAttemptId === attempt.attemptId} aria-controls={`exam-detail-${exam.examId}`} onClick={() => setSelectedAttemptId(attempt.attemptId)}>Ver respuestas</button>}{attempt && completed && <button type="button" className="text-button" onClick={() => {
+                setScoreDrafts(Object.fromEntries(attempt.answers.filter((answer) => answer.answer.trim()).map((answer) => [answer.questionId, String(answer.manualScore ?? answer.score ?? "")])));
+                setScoreReason(""); setScoreDialogAttemptId(attempt.attemptId);
+              }}>Editar calificación</button>}{attempt && attempt.status === "Provisional" && pendingAiCount > 0 && <button type="button" className="text-button" disabled={!!actionAttemptId} onClick={() => void reevaluatePending(attempt)}>{actionAttemptId === attempt.attemptId ? "Re-evaluando…" : `Re-evaluar (${pendingAiCount})`}</button>}{attempt && !completed && <button type="button" className="text-button" onClick={() => setFinalizeAttemptId(attempt.attemptId)}>Finalizar examen</button>}{!attempt && <span>—</span>}</div></td>{exam.questions.map((question) => {
                 const answer = answers.get(question.questionId);
                 const grade = !answer ? "—" : !completed ? "Sin evaluar" : answer.score === null
                   ? "Pendiente de evaluación"
                   : `${formatPoints(answer.score)} / ${formatPoints(question.maxScore)}`;
-                return <td key={question.questionId} rowSpan={2} title={answer?.status || (attempt ? "Sin respuesta guardada" : "Sin intento")}><span className="exam-matrix-answer">{answer ? answer.answer || "Sin respuesta" : "—"}</span>{answer && <small className="exam-matrix-score">{grade}</small>}</td>;
-              })}</tr>
-              <tr key={`${student.studentId}-actions`} className="exam-grade-matrix-actions-row"><td><div className="exam-matrix-actions">{attempt && <button type="button" className="text-button" id={`exam-detail-trigger-${attempt.attemptId}`} aria-label={`Ver respuestas de ${student.studentName} en ${exam.examName}`} aria-expanded={selectedAttemptId === attempt.attemptId} aria-controls={`exam-detail-${exam.examId}`} onClick={() => setSelectedAttemptId(attempt.attemptId)}>Ver respuestas</button>}{attempt && completed && <button type="button" className="text-button" onClick={() => {
-                setScoreDrafts(Object.fromEntries(attempt.answers.filter((answer) => answer.answer.trim()).map((answer) => [answer.questionId, String(answer.manualScore ?? answer.score ?? "")])));
-                setScoreReason(""); setScoreDialogAttemptId(attempt.attemptId);
-              }}>Editar calificación</button>}{attempt && attempt.status === "Provisional" && pendingAiCount > 0 && <button type="button" className="text-button" disabled={!!actionAttemptId} onClick={() => void reevaluatePending(attempt)}>{actionAttemptId === attempt.attemptId ? "Re-evaluando…" : `Re-evaluar (${pendingAiCount})`}</button>}{attempt && !completed && <button type="button" className="text-button" onClick={() => setFinalizeAttemptId(attempt.attemptId)}>Finalizar examen</button>}{!attempt && <span>—</span>}</div></td></tr>
-              </Fragment>;
+                return <td key={question.questionId} title={answer?.status || (attempt ? "Sin respuesta guardada" : "Sin intento")}><span className="exam-matrix-answer">{answer ? answer.answer || "Sin respuesta" : "—"}</span>{answer && <small className="exam-matrix-score">{grade}</small>}</td>;
+              })}</tr>;
             })}
           </tbody></table></div>}
           {selectedAttempt && selectedStudent && !loading && <section className="report-detail" id={`exam-detail-${exam.examId}`} aria-labelledby={`exam-detail-title-${exam.examId}`}>
