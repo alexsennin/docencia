@@ -447,6 +447,7 @@ h2 { margin-bottom: 0; color: #1b2a43; font-size: 1.2rem; letter-spacing: -.025e
 .exam-score-editor { display: grid; gap: 7px; max-height: 42vh; overflow: auto; margin: 15px 0; }
 .exam-score-editor > label { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; font-size: .67rem; }
 .exam-score-editor > label > span:first-child { overflow-wrap: anywhere; }
+.exam-score-editor > label > span:first-child > small { display: block; margin-top: 3px; color: var(--muted); font-size: .6rem; font-weight: 400; }
 .exam-manual-grade-toggle, .exam-manual-grade-field { display: flex; align-items: center; gap: 10px; margin: 12px 0; color: #42566a; font-size: .68rem; font-weight: 700; }
 .exam-manual-grade-toggle input { accent-color: var(--mint); }
 .exam-manual-grade-field { justify-content: space-between; padding: 11px; border: 1px solid var(--line); border-radius: 9px; }

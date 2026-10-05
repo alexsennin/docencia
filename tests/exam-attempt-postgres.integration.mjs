@@ -8,6 +8,7 @@ import { finalizeExamAttemptByTeacherInPostgres, getTeacherExamResultsInPostgres
 const baseUrl = process.env.E2E_BASE_URL || "http://127.0.0.1:13000";
 const examId = "SYNTH-EXAM-ATTEMPT-001";
 const questionId = "SYNTH-QUESTION-ATTEMPT-001";
+const unansweredQuestionId = "SYNTH-QUESTION-ATTEMPT-UNANSWERED-001";
 const aiExamId = "SYNTH-EXAM-ATTEMPT-AI-001";
 const aiQuestionId = "SYNTH-QUESTION-ATTEMPT-AI-001";
 const revokeExamId = "SYNTH-EXAM-ATTEMPT-REVOKE-001";
@@ -56,7 +57,7 @@ async function cleanFixture() {
     if (newEventIds.length) await db.delete(auditEvents).where(inArray(auditEvents.id, newEventIds));
   }
   await db.delete(examAssignments).where(inArray(examAssignments.examId, fixtureExamIds));
-  await db.delete(examQuestions).where(inArray(examQuestions.id, [questionId, aiQuestionId, revokeQuestionId, finalizeQuestionId]));
+  await db.delete(examQuestions).where(inArray(examQuestions.id, [questionId, unansweredQuestionId, aiQuestionId, revokeQuestionId, finalizeQuestionId]));
   await db.delete(exams).where(inArray(exams.id, fixtureExamIds));
   if (createdSyntheticStudent) await db.delete(students).where(eq(students.id, studentId));
   if (createdSyntheticPeriod) await db.delete(academicPeriods).where(eq(academicPeriods.id, "SYNTH-P1"));
@@ -90,6 +91,11 @@ test("intento de examen Postgres: autorización, reanudación, autosave, bloqueo
     id: questionId, examId, order: 1, topic: "Prueba", type: "opcion_multiple", prompt: "Reactivo sintético",
     options: ["A", "B"], correctAnswer: "A", maxScore: "10", evaluationMethod: "automatic", active: true,
   });
+  await db.insert(examQuestions).values({
+    id: unansweredQuestionId, examId, order: 2, topic: "Prueba", type: "abierta", prompt: "Reactivo sintético sin respuesta",
+    options: null, correctAnswer: null, maxScore: "5", evaluationMethod: "ai", rubric: "Rúbrica ficticia", active: true,
+  });
+  await db.update(exams).set({ maxScore: "15" }).where(eq(exams.id, examId));
 
   const denied = await post("/api/exam/start", { studentId: "SYNTH-NOT-A-STUDENT", examId });
   assert.equal(denied.status, 403);
@@ -138,7 +144,7 @@ test("intento de examen Postgres: autorización, reanudación, autosave, bloqueo
   assert.equal(submitted.status, 200);
   assert.equal(firstResult.source, "postgres");
   assert.equal(firstResult.result.totalScore, 10);
-  assert.equal(firstResult.result.grade10, 10);
+  assert.equal(firstResult.result.grade10, 6.67);
   const repeated = await post("/api/exam/submit", { attemptId: started.attemptId, examId, studentId, answers: { [questionId]: "B" } });
   const repeatedResult = await repeated.json();
   assert.equal(repeated.status, 200);
@@ -150,6 +156,7 @@ test("intento de examen Postgres: autorización, reanudación, autosave, bloqueo
   assert.equal(Number(finalAttempt.totalScore), 10);
   const [scoredAnswer] = await db.select().from(examAnswers).where(and(eq(examAnswers.attemptId, started.attemptId), eq(examAnswers.questionId, questionId)));
   assert.equal(Number(scoredAnswer.score), 10, "el envío persiste el puntaje automático por pregunta");
+  await db.delete(examAnswers).where(and(eq(examAnswers.attemptId, started.attemptId), eq(examAnswers.questionId, unansweredQuestionId)));
   await db.update(examAnswers).set({ score: null }).where(eq(examAnswers.id, scoredAnswer.id));
   const legacyReport = (await getTeacherExamResultsInPostgres()).results.find((item) => item.attemptId === started.attemptId);
   assert.equal(legacyReport.answers[0].score, 10, "los exámenes ya entregados recuperan el puntaje del mismo motor del alumno");
@@ -157,13 +164,28 @@ test("intento de examen Postgres: autorización, reanudación, autosave, bloqueo
   assert.equal(unmodifiedLegacyAnswer.score, null, "consultar el desglose no modifica datos históricos");
 
   const manuallyGraded = await updateManualExamScoresInPostgres({
-    attemptId: started.attemptId, scores: [{ questionId, score: 4 }], reason: "Ajuste sintético para comprobar edición docente.",
+    attemptId: started.attemptId, scores: [{ questionId, score: 4 }, { questionId: unansweredQuestionId, score: 3 }], reason: "Ajuste sintético para comprobar edición docente.",
   });
   assert.equal(manuallyGraded.result.items[0].score, 4);
   assert.equal(manuallyGraded.result.items[0].status, "correcta", "el ajuste de puntos no altera si la respuesta fue correcta");
+  assert.equal(manuallyGraded.result.items[1].score, 3);
+  assert.equal(manuallyGraded.result.items[1].status, "sin_respuesta", "puntuar manualmente una pregunta vacía no crea una respuesta");
+  assert.equal(manuallyGraded.result.aiPending, false, "asignar puntos a una pregunta vacía no la envía a IA");
+  assert.equal(manuallyGraded.result.totalScore, 7);
+  assert.equal(manuallyGraded.result.grade10, 4.67);
   const [manualAnswer] = await db.select().from(examAnswers).where(eq(examAnswers.id, scoredAnswer.id));
   assert.equal(Number(manualAnswer.manualScore), 4);
   assert.equal(manualAnswer.answer, "A", "la edición de puntaje conserva la respuesta original");
+  const [manualUnanswered] = await db.select().from(examAnswers).where(and(eq(examAnswers.attemptId, started.attemptId), eq(examAnswers.questionId, unansweredQuestionId)));
+  assert.equal(manualUnanswered.answer, "", "asignar puntos sin una fila previa conserva la respuesta vacía");
+  assert.equal(Number(manualUnanswered.manualScore), 3);
+  assert.equal(manualUnanswered.aiStatus, "Evaluada", "una pregunta vacía puntuada manualmente no queda en la cola de IA");
+  assert.equal((await db.select().from(aiEvaluations).where(and(eq(aiEvaluations.attemptId, started.attemptId), eq(aiEvaluations.questionId, unansweredQuestionId)))).length, 0);
+  const manuallyGradedReport = (await getTeacherExamResultsInPostgres()).results.find((item) => item.attemptId === started.attemptId);
+  const unansweredReport = manuallyGradedReport.answers.find((item) => item.questionId === unansweredQuestionId);
+  assert.equal(unansweredReport.answer, "");
+  assert.equal(unansweredReport.score, 3);
+  assert.equal(unansweredReport.status, "sin_respuesta");
   assert.ok((await db.select().from(auditEvents).where(and(eq(auditEvents.type, "exam_manual_scores_updated"), eq(auditEvents.entityId, started.attemptId)))).length);
   const fixedFinalGrade = await updateManualExamScoresInPostgres({
     attemptId: started.attemptId, scores: [], manualGradeLocked: true, manualGradeOnTen: 7.25,

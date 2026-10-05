@@ -131,7 +131,14 @@ function resultFromRows(
       const item = automatic.items.find((candidate) => candidate.questionId === question.id)!;
       return saved?.manualScore == null ? item : { ...item, score: Number(saved.manualScore) };
     }
-    if (empty) return { questionId: question.id, order: question.order, maxScore: question.maxScore, score: 0, status: "sin_respuesta" as const, feedback: "No se registró una respuesta." };
+    if (empty) {
+      if (saved?.manualScore != null) {
+        const score = Number(saved.manualScore);
+        if (question.evaluationMethod === "ai" && Number.isFinite(score)) aiScore += score;
+        return { questionId: question.id, order: question.order, maxScore: question.maxScore, score, status: "sin_respuesta" as const, feedback: saved.feedback ?? "No se registró una respuesta." };
+      }
+      return { questionId: question.id, order: question.order, maxScore: question.maxScore, score: 0, status: "sin_respuesta" as const, feedback: "No se registró una respuesta." };
+    }
     const evaluation = evaluationByQuestion.get(question.id);
     if (!evaluation || evaluation.status !== "Evaluada") {
       if (saved?.manualScore != null) {
@@ -760,17 +767,25 @@ export async function updateManualExamScoresInPostgres(input: {
     const answerByQuestion = new Map(answers.map((answer) => [answer.questionId, answer]));
     for (const [questionId, score] of submitted) {
       const question = questions.get(questionId);
-      const answer = answerByQuestion.get(questionId);
-      if (!question || !answer) throw new ExamWorkflowError("Sólo puedes ajustar reactivos con respuesta guardada.", 400);
+      if (!question) throw new ExamWorkflowError("El reactivo no pertenece a este examen.", 400);
       if (score < 0 || score > question.maxScore) throw new ExamWorkflowError(`El puntaje de la pregunta ${question.order} debe estar entre 0 y ${question.maxScore}.`);
     }
     const occurredAt = now.toISOString();
     const changes: Array<{ questionId: string; previousScore: number | null; score: number }> = [];
     for (const [questionId, score] of submitted) {
-      const answer = answerByQuestion.get(questionId)!;
-      changes.push({ questionId, previousScore: answer.manualScore == null ? answer.score == null ? null : Number(answer.score) : Number(answer.manualScore), score });
-      await tx.update(examAnswers).set({ manualScore: String(score), manualScoreUpdatedAt: occurredAt, updatedAt: occurredAt })
-        .where(and(eq(examAnswers.attemptId, attemptId), eq(examAnswers.questionId, questionId)));
+      const question = questions.get(questionId)!;
+      const answer = answerByQuestion.get(questionId);
+      changes.push({ questionId, previousScore: answer?.manualScore == null ? answer?.score == null ? null : Number(answer.score) : Number(answer.manualScore), score });
+      if (answer) {
+        await tx.update(examAnswers).set({ manualScore: String(score), manualScoreUpdatedAt: occurredAt, updatedAt: occurredAt })
+          .where(and(eq(examAnswers.attemptId, attemptId), eq(examAnswers.questionId, questionId)));
+      } else {
+        await tx.insert(examAnswers).values({
+          id: `answer-${randomUUID()}`, attemptId, questionId, studentId: attempt.studentId, answer: "",
+          status: "Sin_respuesta", score: "0", manualScore: String(score), manualScoreUpdatedAt: occurredAt,
+          evaluationMethod: question.evaluationMethod, feedback: "No se registró una respuesta.", aiStatus: "Evaluada", updatedAt: occurredAt,
+        });
+      }
     }
     const updatedAnswers = await tx.select().from(examAnswers).where(eq(examAnswers.attemptId, attemptId));
     const evaluationRows = await tx.select().from(aiEvaluations).where(eq(aiEvaluations.attemptId, attemptId));
