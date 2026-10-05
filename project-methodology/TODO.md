@@ -2,7 +2,7 @@
 
 ## Estado vigente al 2026-10-04
 
-La opción de fijar la calificación final manual y excluir ese intento de reevaluaciones está implementada, probada con fixtures sintéticos en Docker, publicada en Vercel Production y sincronizada a GitHub `main` (`5ea7671`). La migración `0007_lucky_maestro.sql` se aplicó con `neondb_owner` desde Neon SQL Editor, sin conceder permisos adicionales al rol runtime; ambas columnas y el hash de Drizzle quedaron verificados. La UI autenticada del 3.º A muestra la nota final editable y el bloqueo de reevaluación; se cerró el diálogo sin guardar. No se sincronizaron datos escolares.
+La opción de fijar la calificación final manual y excluir ese intento de reevaluaciones está implementada, probada con fixtures sintéticos en Docker, publicada en Vercel Production y sincronizada a GitHub `main`. El diálogo permite además editar puntos de todos los reactivos sin respuesta; el servidor conserva respuesta vacía/estado no respondido y no crea trabajos de IA. `dpl_CHsvJha7S3N8ddpQyL4bVpuqLQwQ` quedó READY; el diálogo productivo para un intento sin respuestas mostró los campos habilitados y se cerró sin guardar. Commit funcional: `6894b05`. No se sincronizaron datos escolares.
 
 El corte solicitado a Neon ya está activo. Pendiente operativo: obtener y probar un respaldo independiente de Neon; este plan no permitió habilitar snapshots programados. El snapshot manual actual está en Neon y el backup local cifrado se restauró en Docker temporal, pero no hay una copia independiente fuera de este equipo. La instrucción del 2026-10-02 autoriza corregir el desglose de exámenes y sincronizar Local, Producción y GitHub (DEC-012). No implica sincronizar sus bases de datos. Los hitos anteriores de MVP local que siguen abajo son históricos.
 

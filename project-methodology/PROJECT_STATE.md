@@ -10,6 +10,12 @@ La migración aditiva `0007_lucky_maestro.sql` y `test:exam-attempt` pasaron en 
 
 Neon Production recibió la migración aditiva `0007_lucky_maestro.sql` desde la consola SQL autenticada como `neondb_owner`; no se ampliaron los permisos del rol de aplicación. Se verificaron las dos columnas y el hash en `drizzle.__drizzle_migrations`; no se alteraron intentos, respuestas ni calificaciones reales. Vercel `dpl_gwxjwcP1XHzjL7u2GPD975cQbfZK` quedó READY y asociado a `docencia.integratech.app`; raíz 200, API docente sin sesión 401 y reevaluación GET 405 (método no permitido). Tras recargar la sesión docente se confirmó en 3.º A la matriz y el modal actualizado con nota final editable y bloqueo de reevaluación; se cerró sin guardar cambios. El mismo árbol se publicó en Vercel y GitHub `main` quedó sincronizada con `5ea7671`.
 
+## Puntaje manual en reactivos sin respuesta (2026-10-04)
+
+`Editar calificación` muestra un campo acotado para cada reactivo, incluso cuando el intento no tiene respuesta guardada. El puntaje se guarda en la columna manual; cuando no existía fila de respuesta, se crea una fila con texto vacío y estado `Sin_respuesta`. Los puntos concedidos se reflejan en el resultado sin cambiar ese estado ni llamar a IA o incorporarlo a la reevaluación.
+
+Validación: `test:exam-attempt` pasó en Docker con un reactivo sin respuesta y sin fila previa; confirmó puntos/resultados, texto vacío, estado `sin_respuesta` y ninguna evaluación IA. TypeScript y ESLint focalizado pasaron; build Next.js de Vercel pasó. El deployment `dpl_CHsvJha7S3N8ddpQyL4bVpuqLQwQ` quedó READY. En sesión docente productiva se abrieron los ocho campos de un intento sin respuestas; todos quedaron habilitados y acotados por reactivo, y se cerró con Cancelar sin escribir. GitHub `main` quedó sincronizada en `6894b05`.
+
 ## Acomodo de la matriz de Exámenes (2026-10-03)
 
 La tabla usa una sola fila por alumno. Después de `Estado y detalle` muestra `Calificación obtenida` sobre 10 y luego los reactivos `P1`, `P2`, etc.; cada respuesta comparte renglón con su puntaje (por ejemplo, `B, 5/5`). Los intentos sin evaluación muestran `Pendiente` en la columna total y las respuestas largas conservan su vista previa recortada. Los flujos individuales de ver, editar, re-evaluar y finalizar permanecen en la celda de estado.

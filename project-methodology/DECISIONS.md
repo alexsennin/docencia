@@ -122,3 +122,11 @@ El usuario indicó incluir retardos del periodo además de comentarios. La versi
 - **Consecuencias:** se mantiene separada la nota calculada de la manual; cada cambio requiere motivo y auditoría. La matriz marca como Manual la nota fijada. No se altera la respuesta ni se recalifican otros alumnos.
 - **Publicación y evidencia:** migración `0007_lucky_maestro.sql` aplicada desde Neon SQL Editor como `neondb_owner` sin ampliar permisos del runtime; hash y columnas verificados. Vercel `dpl_gwxjwcP1XHzjL7u2GPD975cQbfZK` quedó READY. Recorrido autenticado de Producción confirmó el control editable en 3.º A; se cerró sin modificar notas. GitHub `main` quedó sincronizada en `5ea7671`.
 - **Referencias:** migración `0007_lucky_maestro.sql`, `components/teacher-exam-grade-matrix.tsx`, `lib/exam-attempt-postgres.ts`.
+
+## DEC-015 — Permitir puntuar manualmente reactivos sin respuesta
+
+- **Fecha / estado:** 2026-10-04 · Implementada, publicada y verificada.
+- **Decisión:** el editor de calificación muestra un campo de puntaje para cada reactivo de un intento entregado. Si falta la fila de respuesta, el servidor crea un registro vacío con el puntaje manual; no inventa respuesta ni cambia `Sin_respuesta`.
+- **Consecuencias:** los puntos manuales cuentan para el resultado final aun si la respuesta está vacía. La pregunta vacía no se manda a IA ni queda disponible para reevaluación; el cambio conserva motivo y auditoría.
+- **Validación y publicación:** integración con fixtures sintéticos confirma fila ausente antes de editar, puntos calculados, respuesta vacía y cero evaluación IA. Vercel `dpl_CHsvJha7S3N8ddpQyL4bVpuqLQwQ` quedó READY; UI autenticada de Producción mostró todos los reactivos habilitados para un intento sin respuestas, cerrado sin guardar. GitHub `main`: `6894b05`.
+- **Referencias:** `components/teacher-exam-grade-matrix.tsx`, `lib/exam-attempt-postgres.ts`, `tests/exam-attempt-postgres.integration.mjs`.
