@@ -286,6 +286,8 @@ export const examAttempts = pgTable(
     aiScore: numeric("puntaje_ai"),
     totalScore: numeric("puntaje_total"),
     gradeOnTen: numeric("calificacion_10"),
+    manualGradeOnTen: numeric("calificacion_manual_10"),
+    manualGradeLocked: boolean("calificacion_manual_bloqueada").notNull().default(false),
     aiPending: boolean("ai_pendiente"),
     locked: boolean("bloqueo_activo"),
     lockedAt: instant("bloqueado_at"),

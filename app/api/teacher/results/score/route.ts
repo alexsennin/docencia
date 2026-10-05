@@ -9,7 +9,7 @@ export async function POST(request: Request) {
   if (!(await hasTeacherSession())) return Response.json({ error: "Acceso docente requerido." }, { status: 401 });
   if (getDataBackend() !== "postgres") return Response.json({ error: "La edición manual sólo está disponible con PostgreSQL." }, { status: 503 });
   try {
-    const body = await request.json() as { attemptId?: string; scores?: Array<{ questionId?: string; score?: number }>; reason?: string };
+    const body = await request.json() as { attemptId?: string; scores?: Array<{ questionId?: string; score?: number }>; manualGradeLocked?: boolean; manualGradeOnTen?: number | null; reason?: string };
     const result = await updateManualExamScoresInPostgres(body);
     let academicSyncPending = false;
     try { await refreshGradeSnapshotsInPostgres(result.partialId); }

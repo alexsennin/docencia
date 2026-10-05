@@ -114,3 +114,11 @@ El usuario indicó incluir retardos del periodo además de comentarios. La versi
 - **Consecuencias:** dos columnas nuevas aditivas guardan el puntaje manual y su fecha. Neon Production recibió la migración probada y verificada; Vercel Production y GitHub `main` quedaron actualizados.
 - **Alcance:** matriz docente de exámenes en PostgreSQL. No sincroniza las bases de datos local y productiva.
 - **Referencias:** `components/teacher-exam-grade-matrix.tsx`, `lib/exam-attempt-postgres.ts`, migración `0006_mute_lady_vermin.sql`.
+
+## DEC-014 — Fijar la calificación final manualmente por alumno
+
+- **Fecha / estado:** 2026-10-04 · Implementada, publicada y verificada en Producción.
+- **Decisión:** en `Editar calificación`, además de los puntajes por reactivo, la docente puede activar una nota final manual sobre 10. Guardar esa nota establece `manualGradeLocked`; las reevaluaciones de IA del intento se bloquean y los resultados de IA que estuvieran en curso no se aplican. El cálculo derivado por reactivos se conserva y vuelve a mostrarse al retirar el ajuste.
+- **Consecuencias:** se mantiene separada la nota calculada de la manual; cada cambio requiere motivo y auditoría. La matriz marca como Manual la nota fijada. No se altera la respuesta ni se recalifican otros alumnos.
+- **Publicación y evidencia:** migración `0007_lucky_maestro.sql` aplicada desde Neon SQL Editor como `neondb_owner` sin ampliar permisos del runtime; hash y columnas verificados. Vercel `dpl_gwxjwcP1XHzjL7u2GPD975cQbfZK` quedó READY. Recorrido autenticado de Producción confirmó el control editable en 3.º A; se cerró sin modificar notas.
+- **Referencias:** migración `0007_lucky_maestro.sql`, `components/teacher-exam-grade-matrix.tsx`, `lib/exam-attempt-postgres.ts`.

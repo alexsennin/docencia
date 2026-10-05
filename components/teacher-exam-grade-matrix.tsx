@@ -7,7 +7,7 @@ type ExamQuestion = { questionId: string; order: number; maxScore: number; promp
 type MatrixExam = { examId: string; examName: string; partialId: string; grade: string; group: string; groups: string[]; questions: ExamQuestion[] };
 type Student = { studentId: string; studentName: string; grade: string; group: string };
 type Answer = { questionId: string; answer: string; score: number | null; manualScore?: number | null; feedback: string; status: string };
-type ExamAttempt = { attemptId: string; studentId: string; grade: string; group: string; examId: string; partialId: string; status: string; submissionState?: string; submittedAt: string; grade10?: number | null; answers: Answer[] };
+type ExamAttempt = { attemptId: string; studentId: string; grade: string; group: string; examId: string; partialId: string; status: string; submissionState?: string; submittedAt: string; grade10?: number | null; manualGradeLocked?: boolean; manualGradeOnTen?: number | null; answers: Answer[] };
 type MatrixResponse = { exams?: MatrixExam[]; students?: Student[]; results?: ExamAttempt[]; error?: string };
 
 const groupName = (student: Student) => `${student.grade} ${student.group}`.trim();
@@ -24,6 +24,8 @@ export function TeacherExamGradeMatrix({ active, partialId, partialName }: { act
   const [scoreDialogAttemptId, setScoreDialogAttemptId] = useState("");
   const [scoreDrafts, setScoreDrafts] = useState<Record<string, string>>({});
   const [scoreReason, setScoreReason] = useState("");
+  const [manualGradeLocked, setManualGradeLocked] = useState(false);
+  const [manualGradeDraft, setManualGradeDraft] = useState("");
   const [finalizeAttemptId, setFinalizeAttemptId] = useState("");
   const [actionAttemptId, setActionAttemptId] = useState("");
   const [actionMessage, setActionMessage] = useState("");
@@ -97,17 +99,19 @@ export function TeacherExamGradeMatrix({ active, partialId, partialName }: { act
       const scores = Object.entries(scoreDrafts)
         .filter(([questionId, value]) => value.trim() !== "" && Number(value) !== Number(previous.get(questionId)))
         .map(([questionId, value]) => ({ questionId, score: Number(value) }));
-      if (!scores.length) throw new Error("No hay cambios de puntaje para guardar.");
+      if (manualGradeLocked && (!manualGradeDraft.trim() || !Number.isFinite(Number(manualGradeDraft)) || Number(manualGradeDraft) < 0 || Number(manualGradeDraft) > 10)) {
+        throw new Error("La calificación final debe estar entre 0 y 10.");
+      }
       const response = await fetch("/api/teacher/results/score", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ attemptId: attempt.attemptId, scores, reason: scoreReason }),
+        body: JSON.stringify({ attemptId: attempt.attemptId, scores, reason: scoreReason, manualGradeLocked, manualGradeOnTen: manualGradeLocked ? Number(manualGradeDraft) : null }),
       });
       const body = await response.json() as { error?: string; academicSyncPending?: boolean };
       if (!response.ok) throw new Error(body.error || "No se pudieron guardar los puntajes.");
       await reloadResults();
       setScoreDialogAttemptId("");
       setScoreReason("");
-      setActionMessage(body.academicSyncPending ? "Puntajes guardados; la actualización del parcial quedó pendiente." : "Puntajes guardados y parcial actualizado.");
+      setActionMessage(body.academicSyncPending ? "Calificación guardada; la actualización del parcial quedó pendiente." : "Calificación guardada y parcial actualizado.");
     } catch (cause) {
       setActionMessage(cause instanceof Error ? cause.message : "No se pudieron guardar los puntajes.");
     } finally {
@@ -117,6 +121,7 @@ export function TeacherExamGradeMatrix({ active, partialId, partialName }: { act
   }
 
   async function reevaluatePending(attempt: ExamAttempt) {
+    if (attempt.manualGradeLocked) return;
     if (actionInFlight.current) return;
     actionInFlight.current = true;
     setActionAttemptId(attempt.attemptId);
@@ -193,10 +198,11 @@ export function TeacherExamGradeMatrix({ active, partialId, partialName }: { act
               const answers = new Map((attempt?.answers ?? []).map((answer) => [answer.questionId, answer]));
               const completed = attempt?.status === "Definitivo" || attempt?.status === "Provisional";
               const pendingAiCount = attempt?.answers.filter((answer) => answer.status.toLowerCase() === "pendiente" && answer.answer.trim()).length ?? 0;
+              const canReevaluate = !!attempt && attempt.status === "Provisional" && pendingAiCount > 0 && !attempt.manualGradeLocked;
               return <tr key={student.studentId} className="exam-grade-matrix-row"><td>{student.studentId}</td><th scope="row">{student.studentName}</th><td className="exam-matrix-status-cell"><span className="exam-matrix-state-label">Estado del intento</span><strong className="exam-matrix-state">{attempt ? attempt.submissionState || attempt.status : "Sin intento"}</strong><div className="exam-matrix-actions">{attempt && <button type="button" className="text-button" id={`exam-detail-trigger-${attempt.attemptId}`} aria-label={`Ver respuestas de ${student.studentName} en ${exam.examName}`} aria-expanded={selectedAttemptId === attempt.attemptId} aria-controls={`exam-detail-${exam.examId}`} onClick={() => setSelectedAttemptId(attempt.attemptId)}>Ver respuestas</button>}{attempt && completed && <button type="button" className="text-button" onClick={() => {
                 setScoreDrafts(Object.fromEntries(attempt.answers.filter((answer) => answer.answer.trim()).map((answer) => [answer.questionId, String(answer.manualScore ?? answer.score ?? "")])));
-                setScoreReason(""); setScoreDialogAttemptId(attempt.attemptId);
-              }}>Editar calificación</button>}{attempt && attempt.status === "Provisional" && pendingAiCount > 0 && <button type="button" className="text-button" disabled={!!actionAttemptId} onClick={() => void reevaluatePending(attempt)}>{actionAttemptId === attempt.attemptId ? "Re-evaluando…" : `Re-evaluar (${pendingAiCount})`}</button>}{attempt && !completed && <button type="button" className="text-button" onClick={() => setFinalizeAttemptId(attempt.attemptId)}>Finalizar examen</button>}{!attempt && <span>—</span>}</div></td><td className="exam-matrix-final-score">{!attempt ? "—" : attempt.grade10 == null ? "Pendiente" : `${formatPoints(attempt.grade10)} / 10`}</td>{exam.questions.map((question) => {
+                setScoreReason(""); setManualGradeLocked(!!attempt.manualGradeLocked); setManualGradeDraft(String(attempt.manualGradeOnTen ?? attempt.grade10 ?? "")); setScoreDialogAttemptId(attempt.attemptId);
+              }}>Editar calificación</button>}{canReevaluate && attempt && <button type="button" className="text-button" disabled={!!actionAttemptId} onClick={() => void reevaluatePending(attempt)}>{actionAttemptId === attempt.attemptId ? "Re-evaluando…" : `Re-evaluar (${pendingAiCount})`}</button>}{attempt && !completed && <button type="button" className="text-button" onClick={() => setFinalizeAttemptId(attempt.attemptId)}>Finalizar examen</button>}{!attempt && <span>—</span>}</div></td><td className="exam-matrix-final-score">{!attempt ? "—" : attempt.grade10 == null ? "Pendiente" : <>{formatPoints(attempt.grade10)} / 10{attempt.manualGradeLocked && <small className="exam-manual-grade-badge">Manual</small>}</>}</td>{exam.questions.map((question) => {
                 const answer = answers.get(question.questionId);
                 const grade = !answer ? "—" : !completed ? "Sin evaluar" : answer.score === null
                   ? "Pendiente de evaluación"
@@ -224,7 +230,7 @@ export function TeacherExamGradeMatrix({ active, partialId, partialName }: { act
             })}</div>
           </section>}
           {actionMessage && <p className="notice" role="status">{actionMessage}</p>}
-          {scoreAttempt && scoreStudent && <div className="academic-dialog-backdrop" role="presentation"><section className="academic-dialog exam-score-dialog" role="dialog" aria-modal="true" aria-labelledby={`exam-score-title-${exam.examId}`}><button type="button" className="dialog-close" aria-label="Cerrar" onClick={() => setScoreDialogAttemptId("")}>×</button><p className="eyebrow">AJUSTE DOCENTE POR ALUMNO</p><h3 id={`exam-score-title-${exam.examId}`}>Editar calificación</h3><p>{scoreStudent.studentName} · {exam.examName}</p><p>El ajuste modifica sólo los puntos del reactivo. No cambia la respuesta ni su estado de correcta o incorrecta.</p><div className="exam-score-editor">{exam.questions.map((question) => { const answer = scoreAttempt.answers.find((item) => item.questionId === question.questionId); return <label key={question.questionId}><span>Pregunta {question.order} · {answer?.answer.trim() ? answer.answer : "Sin respuesta"}</span>{answer?.answer.trim() ? <span className="exam-score-input"><input aria-label={`Puntaje de pregunta ${question.order}`} inputMode="decimal" value={scoreDrafts[question.questionId] ?? ""} onChange={(event) => setScoreDrafts((current) => ({ ...current, [question.questionId]: event.target.value }))} /><small>/ {formatPoints(question.maxScore)} puntos</small></span> : <small>Sin respuesta guardada</small>}</label>; })}</div><label className="exam-score-reason"><span>Motivo del ajuste</span><textarea required maxLength={500} value={scoreReason} onChange={(event) => setScoreReason(event.target.value)} /></label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setScoreDialogAttemptId("")} disabled={!!actionAttemptId}>Cancelar</button><button type="button" className="primary-button" onClick={() => void saveManualScores(scoreAttempt)} disabled={!!actionAttemptId || !scoreReason.trim()}>{actionAttemptId === scoreAttempt.attemptId ? "Guardando…" : "Guardar calificación"}</button></div></section></div>}
+          {scoreAttempt && scoreStudent && <div className="academic-dialog-backdrop" role="presentation"><section className="academic-dialog exam-score-dialog" role="dialog" aria-modal="true" aria-labelledby={`exam-score-title-${exam.examId}`}><button type="button" className="dialog-close" aria-label="Cerrar" onClick={() => setScoreDialogAttemptId("")}>×</button><p className="eyebrow">AJUSTE DOCENTE POR ALUMNO</p><h3 id={`exam-score-title-${exam.examId}`}>Editar calificación</h3><p>{scoreStudent.studentName} · {exam.examName}</p><p>La calificación final puede fijarse manualmente sin modificar los puntajes de los reactivos. Al fijarla, este intento queda excluido de futuras reevaluaciones con IA.</p><label className="exam-manual-grade-toggle"><input type="checkbox" checked={manualGradeLocked} onChange={(event) => setManualGradeLocked(event.target.checked)} /><span>Fijar calificación final manualmente y omitir reevaluación de este examen</span></label><label className="exam-manual-grade-field"><span>Calificación final del examen</span><span className="exam-score-input"><input aria-label="Calificación final del examen" type="number" min="0" max="10" step="0.01" inputMode="decimal" value={manualGradeDraft} disabled={!manualGradeLocked} onChange={(event) => setManualGradeDraft(event.target.value)} /><small>/ 10</small></span></label><div className="exam-score-editor">{exam.questions.map((question) => { const answer = scoreAttempt.answers.find((item) => item.questionId === question.questionId); return <label key={question.questionId}><span>Pregunta {question.order} · {answer?.answer.trim() ? answer.answer : "Sin respuesta"}</span>{answer?.answer.trim() ? <span className="exam-score-input"><input aria-label={`Puntaje de pregunta ${question.order}`} inputMode="decimal" value={scoreDrafts[question.questionId] ?? ""} onChange={(event) => setScoreDrafts((current) => ({ ...current, [question.questionId]: event.target.value }))} /><small>/ {formatPoints(question.maxScore)} puntos</small></span> : <small>Sin respuesta guardada</small>}</label>; })}</div><label className="exam-score-reason"><span>Motivo del ajuste</span><textarea required maxLength={500} value={scoreReason} onChange={(event) => setScoreReason(event.target.value)} /></label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setScoreDialogAttemptId("")} disabled={!!actionAttemptId}>Cancelar</button><button type="button" className="primary-button" onClick={() => void saveManualScores(scoreAttempt)} disabled={!!actionAttemptId || !scoreReason.trim() || manualGradeLocked && (!manualGradeDraft.trim() || Number(manualGradeDraft) < 0 || Number(manualGradeDraft) > 10)}>{actionAttemptId === scoreAttempt.attemptId ? "Guardando…" : "Guardar calificación"}</button></div></section></div>}
           {finalizeTarget && finalizeStudent && <div className="academic-dialog-backdrop" role="presentation"><section className="academic-dialog" role="dialog" aria-modal="true" aria-labelledby={`exam-finalize-title-${exam.examId}`}><button type="button" className="dialog-close" aria-label="Cerrar" onClick={() => setFinalizeAttemptId("")}>×</button><p className="eyebrow">CIERRE DE INTENTO</p><h3 id={`exam-finalize-title-${exam.examId}`}>Finalizar examen</h3><p>{finalizeStudent.studentName} · {exam.examName}</p><p>Se procesarán las respuestas que quedaron guardadas para este intento. Las preguntas sin respuesta se registrarán como no contestadas; las respuestas abiertas guardadas se enviarán a evaluación con IA.</p><p><strong>{finalizeTarget.answers.filter((answer) => answer.answer.trim()).length} respuestas guardadas</strong> · {exam.questions.length - finalizeTarget.answers.filter((answer) => answer.answer.trim()).length} sin respuesta</p><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setFinalizeAttemptId("")} disabled={!!actionAttemptId}>Cancelar</button><button type="button" className="primary-button" onClick={() => void submitFinalization(finalizeTarget.attemptId)} disabled={!!actionAttemptId}>{actionAttemptId === finalizeTarget.attemptId ? "Finalizando…" : "Finalizar examen"}</button></div></section></div>}
           {!groupStudents.length && <p className="dashboard-empty">No hay alumnos en este grupo.</p>}
         </section>;

@@ -1,6 +1,14 @@
 # Estado actual
 
-Fecha de actualización: 2026-10-03.
+Fecha de actualización: 2026-10-04.
+
+## Calificación final manual por alumno (2026-10-04)
+
+`Editar calificación` ahora incluye la nota final sobre 10 además del ajuste opcional por reactivo. Al activar `Fijar calificación final manualmente`, se guarda una calificación independiente y la bandera `manualGradeLocked`; la matriz marca el resultado como Manual. El cálculo por reactivos se conserva. La reevaluación individual rechaza intentos fijados y la vista oculta esa acción; si una llamada IA ya estaba en curso, su resultado se descarta al guardar la bandera y vuelve a dejarse Pendiente. Quitar el ajuste recupera el cálculo derivado. Cada modificación exige motivo y queda auditada.
+
+La migración aditiva `0007_lucky_maestro.sql` y `test:exam-attempt` pasaron en Docker local con datos sintéticos; el test cubre nota fijada, rechazo de reevaluación, liberación del ajuste y una carrera con IA en curso. `npx tsc --noEmit`, build optimizado aislado y la ruta de build Vercel en Preview pasan; ESLint no reporta errores y conserva 16 advertencias conocidas del puente.
+
+Neon Production recibió la migración aditiva `0007_lucky_maestro.sql` desde la consola SQL autenticada como `neondb_owner`; no se ampliaron los permisos del rol de aplicación. Se verificaron las dos columnas y el hash en `drizzle.__drizzle_migrations`; no se alteraron intentos, respuestas ni calificaciones reales. Vercel `dpl_gwxjwcP1XHzjL7u2GPD975cQbfZK` quedó READY y asociado a `docencia.integratech.app`; raíz 200, API docente sin sesión 401 y reevaluación GET 405 (método no permitido). Tras recargar la sesión docente se confirmó en 3.º A la matriz y el modal actualizado con nota final editable y bloqueo de reevaluación; se cerró sin guardar cambios. El deployment contiene el árbol funcional local de esta tarea; no se hizo commit ni push a GitHub.
 
 ## Acomodo de la matriz de Exámenes (2026-10-03)
 

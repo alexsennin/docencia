@@ -50,6 +50,13 @@
       "when": 1790990925900,
       "tag": "0006_mute_lady_vermin",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791169335028,
+      "tag": "0007_lucky_maestro",
+      "breakpoints": true
     }
   ]
 }

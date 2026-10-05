@@ -168,7 +168,9 @@ function resultFromRows(
     automaticScore,
     aiScore,
     totalScore,
-    grade10: totalScore === null ? null : Number(((totalScore / exam.maxScore) * 10).toFixed(2)),
+    grade10: attempt.manualGradeLocked && attempt.manualGradeOnTen !== null
+      ? Number(attempt.manualGradeOnTen)
+      : totalScore === null ? null : Number(((totalScore / exam.maxScore) * 10).toFixed(2)),
     maxScore: exam.maxScore,
     aiPending,
     items,
@@ -591,6 +593,7 @@ export async function reevaluateOpenAnswerInPostgres(
     const [attempt] = await tx.select().from(examAttempts).where(eq(examAttempts.id, attemptId)).for("update").limit(1);
     if (!attempt) throw new ExamWorkflowError("No se encontró el intento.", 404);
     if (attempt.examId !== exam.id) throw new ExamWorkflowError("El reactivo no pertenece a este intento.", 403);
+    if (attempt.manualGradeLocked) throw new ExamWorkflowError("La calificación final fue fijada manualmente. Quita ese ajuste antes de re-evaluar.", 409);
     if (attempt.status === "Definitivo") {
       const [savedAnswer] = await tx.select().from(examAnswers).where(and(eq(examAnswers.attemptId, attemptId), eq(examAnswers.questionId, questionId))).limit(1);
       return { terminal: { ok: true, attemptId, studentId: attempt.studentId, examId: attempt.examId, partialId: attempt.partialId, questionId, aiPending: false, alreadyEvaluated: true, evaluation: { score: Number(savedAnswer?.score ?? 0), feedback: savedAnswer?.feedback ?? "La respuesta ya quedó evaluada." } } } as const;
@@ -651,11 +654,16 @@ export async function reevaluateOpenAnswerInPostgres(
     throw new ExamWorkflowError(message, status);
   }
 
-  return db.transaction(async (tx) => {
+  const finalized = await db.transaction(async (tx) => {
     const [attempt] = await tx.select().from(examAttempts).where(eq(examAttempts.id, attemptId)).for("update").limit(1);
     if (!attempt) throw new ExamWorkflowError("No se encontró el intento.", 404);
     const [currentEvaluation] = await tx.select().from(aiEvaluations).where(eq(aiEvaluations.id, claim.evaluationId)).for("update").limit(1);
     if (!currentEvaluation || currentEvaluation.status !== "Procesando") throw new ExamWorkflowError("La evaluación cambió mientras se procesaba.", 409);
+    if (attempt.manualGradeLocked) {
+      await tx.update(aiEvaluations).set({ status: "Pendiente", error: "El docente fijó manualmente la calificación final.", executedAt: null })
+        .where(eq(aiEvaluations.id, claim.evaluationId));
+      return { blocked: true as const };
+    }
 
     const evaluatedAt = new Date().toISOString();
     const savedEvaluation: GeminiEvaluation = {
@@ -692,7 +700,7 @@ export async function reevaluateOpenAnswerInPostgres(
       partialId: attempt.partialId, studentId: attempt.studentId, actorId: "docente",
       details: { questionId, score: evaluation.score, aiPending: result.aiPending }, occurredAt: evaluatedAt,
     });
-    return {
+    return { blocked: false as const, result: {
       ok: true,
       attemptId,
       studentId: attempt.studentId,
@@ -706,20 +714,30 @@ export async function reevaluateOpenAnswerInPostgres(
       totalScore: result.totalScore,
       grade10: result.grade10,
       status: updatedAttempt?.status ?? nextStatus,
-    };
+    } };
   });
+  if (finalized.blocked) throw new ExamWorkflowError("La calificación final fue fijada manualmente; la respuesta no se actualizó.", 409);
+  return finalized.result;
 }
 
 export async function updateManualExamScoresInPostgres(input: {
   attemptId?: string;
   scores?: Array<{ questionId?: string; score?: number }>;
+  manualGradeLocked?: boolean;
+  manualGradeOnTen?: number | null;
   reason?: string;
 }, now = new Date()) {
   const attemptId = String(input.attemptId ?? "").trim();
   const scores = Array.isArray(input.scores) ? input.scores : [];
   const reason = String(input.reason ?? "").trim();
-  if (!attemptId || !scores.length || !reason) throw new ExamWorkflowError("Selecciona puntajes y escribe el motivo del ajuste.");
+  const hasGradeSetting = typeof input.manualGradeLocked === "boolean";
+  const manualGradeLocked = hasGradeSetting ? input.manualGradeLocked! : undefined;
+  const manualGradeOnTen = input.manualGradeOnTen === null || input.manualGradeOnTen === undefined ? null : Number(input.manualGradeOnTen);
+  if (!attemptId || (!scores.length && !hasGradeSetting) || !reason) throw new ExamWorkflowError("Selecciona cambios y escribe el motivo del ajuste.");
   if (scores.length > 100 || reason.length > 500) throw new ExamWorkflowError("La solicitud de ajuste excede el tamaño permitido.");
+  if (manualGradeLocked && (manualGradeOnTen === null || !Number.isFinite(manualGradeOnTen) || manualGradeOnTen < 0 || manualGradeOnTen > 10)) {
+    throw new ExamWorkflowError("La calificación final debe estar entre 0 y 10.");
+  }
   const submitted = new Map<string, number>();
   for (const item of scores) {
     const questionId = String(item.questionId ?? "").trim();
@@ -756,19 +774,23 @@ export async function updateManualExamScoresInPostgres(input: {
     }
     const updatedAnswers = await tx.select().from(examAnswers).where(eq(examAnswers.attemptId, attemptId));
     const evaluationRows = await tx.select().from(aiEvaluations).where(eq(aiEvaluations.attemptId, attemptId));
-    const result = resultFromRows(attempt, exam, updatedAnswers, evaluationRows);
+    const result = resultFromRows({ ...attempt, manualGradeLocked: false, manualGradeOnTen: null }, exam, updatedAnswers, evaluationRows);
     const status = result.aiPending ? "Provisional" : "Definitivo";
+    const nextManualGradeLocked = manualGradeLocked ?? attempt.manualGradeLocked;
+    const nextManualGradeOnTen = manualGradeLocked === undefined ? attempt.manualGradeOnTen : manualGradeLocked ? manualGradeOnTen : null;
+    const finalGrade = nextManualGradeLocked && nextManualGradeOnTen !== null ? nextManualGradeOnTen : result.grade10;
     await tx.update(examAttempts).set({
       status, automaticScore: String(result.automaticScore), aiScore: String(result.aiScore ?? 0),
       totalScore: result.totalScore === null ? null : String(result.totalScore),
-      gradeOnTen: result.grade10 === null ? null : String(result.grade10), aiPending: result.aiPending, updatedAt: occurredAt,
+      gradeOnTen: finalGrade === null ? null : String(finalGrade), manualGradeOnTen: nextManualGradeOnTen === null ? null : String(nextManualGradeOnTen),
+      manualGradeLocked: nextManualGradeLocked, aiPending: result.aiPending, updatedAt: occurredAt,
     }).where(eq(examAttempts.id, attemptId));
     await tx.insert(auditEvents).values({
       id: `event-${randomUUID()}`, type: "exam_manual_scores_updated", entity: "INTENTOS", entityId: attemptId,
       partialId: attempt.partialId, studentId: attempt.studentId, actorId: "docente",
-      details: { reason, changes }, occurredAt,
+      details: { reason, changes, manualGrade: { previousLocked: attempt.manualGradeLocked, previousGradeOnTen: attempt.manualGradeOnTen, locked: nextManualGradeLocked, gradeOnTen: nextManualGradeOnTen } }, occurredAt,
     });
-    return { attemptId, partialId: attempt.partialId, result, status };
+    return { attemptId, partialId: attempt.partialId, result: { ...result, grade10: finalGrade }, status, manualGradeLocked: nextManualGradeLocked, manualGradeOnTen: nextManualGradeOnTen === null ? null : Number(nextManualGradeOnTen) };
   });
 }
 
@@ -925,6 +947,8 @@ export async function getTeacherExamResultsInPostgres(options: { includeInProgre
           : Date.now() > deadlineFor(attempt).getTime() + 60_000 ? "Tiempo agotado; sin enviar" : "En curso; sin enviar",
         score: attempt.totalScore === null ? null : Number(attempt.totalScore),
         grade10: attempt.gradeOnTen === null ? null : Number(attempt.gradeOnTen),
+        manualGradeLocked: attempt.manualGradeLocked,
+        manualGradeOnTen: attempt.manualGradeOnTen === null ? null : Number(attempt.manualGradeOnTen),
         automaticScore: attempt.automaticScore === null ? null : Number(attempt.automaticScore),
         aiPending: attempt.aiPending ?? false,
         submittedAt: attempt.finishedAt ?? attempt.updatedAt ?? attempt.startedAt ?? "",
