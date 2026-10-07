@@ -278,7 +278,7 @@ export async function startCaRubricJobPostgres(input: { partialId?: string; grou
       if (activePayload.partialId === partialId && activePayload.group === group) return serializeJob(active)!;
       throw new Error("Ya hay una generación de rúbrica por grupo en curso. Consulta su avance antes de iniciar otra.");
     }
-    const roster = groupOfRows(await tx.select().from(students), group).sort((a, b) => String(a.name ?? "").localeCompare(String(b.name ?? ""), "es"));
+    const roster = groupOfRows((await tx.select().from(students)).filter((student) => student.active), group).sort((a, b) => String(a.name ?? "").localeCompare(String(b.name ?? ""), "es"));
     if (!roster.length) throw new Error("El grupo seleccionado no tiene alumnos registrados.");
     const existingRows = await tx.select().from(conductAttitude).where(and(eq(conductAttitude.partialId, partialId), eq(conductAttitude.type, RUBRIC_RECORD_TYPE)));
     const sessionRows = await tx.select().from(classSessions).where(and(eq(classSessions.partialId, partialId), eq(classSessions.group, group)));

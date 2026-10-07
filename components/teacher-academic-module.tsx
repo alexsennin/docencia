@@ -17,6 +17,7 @@ type StudentDraft = { attendance: AttendanceStatus; annotation: string };
 type TaskDraft = { score: string };
 type TaskKind = "Tarea" | "Trabajo en clase";
 const str = (row: Row, key: string) => String(row[key] ?? "");
+const isActiveStudent = (student: Row) => !["FALSE", "0"].includes(str(student, "activo").toUpperCase());
 const reportList = (value: unknown): string[] => {
   if (Array.isArray(value)) return value.map(String).map((item) => item.trim()).filter(Boolean);
   if (typeof value !== "string" || !value.trim()) return [];
@@ -134,7 +135,7 @@ export function TeacherAcademicModule({ active, mode, partialId, onPartialChange
       const availablePartials = partialOptions.map((item) => item.id);
       const rememberedPartialId = window.localStorage.getItem("docencia.teacher.selectedPartialId") || "";
       onPartialChange(availablePartials.includes(rememberedPartialId) ? rememberedPartialId : availablePartials[0] ?? "");
-      const availableGroups = Array.from(new Set(body.snapshot.students.map((student) => `${str(student, "grado")} ${str(student, "grupo")}`.trim()))).filter((item) => !/(PRUEBA|TEST)/i.test(item)).sort((a, b) => a.localeCompare(b, "es-MX", { numeric: true }));
+      const availableGroups = Array.from(new Set(body.snapshot.students.filter((student) => isActiveStudent(student)).map((student) => `${str(student, "grado")} ${str(student, "grupo")}`.trim()))).filter((item) => !/(PRUEBA|TEST)/i.test(item)).sort((a, b) => a.localeCompare(b, "es-MX", { numeric: true }));
       setGroup((current) => availableGroups.includes(current) ? current : availableGroups[0] || "");
     }).catch((cause: unknown) => { if (!cancelled) setError(cause instanceof Error ? cause.message : "No se pudo cargar."); }).finally(() => { if (!cancelled) setBusy(null); });
     return () => { cancelled = true; };
@@ -142,8 +143,9 @@ export function TeacherAcademicModule({ active, mode, partialId, onPartialChange
 
   const partial = data?.snapshot.partials.find((item) => str(item, "parcial_id") === partialId);
   const ecMode = str(partial ?? {}, "modo_evaluacion_continua") === "Ponderado" ? "Ponderado" : "Promedio";
-  const groups = useMemo(() => Array.from(new Set(data?.snapshot.students.map((student) => `${str(student, "grado")} ${str(student, "grupo")}`.trim()) ?? [])).filter((item) => !/(PRUEBA|TEST)/i.test(item)).sort((a, b) => a.localeCompare(b, "es-MX", { numeric: true })), [data]);
-  const students = useMemo(() => (data?.snapshot.students.filter((student) => `${str(student, "grado")} ${str(student, "grupo")}`.trim() === group) ?? []).sort((a, b) => str(a, "nombre").localeCompare(str(b, "nombre"), "es-MX")), [data, group]);
+  const availableStudents = useMemo(() => (data?.snapshot.students ?? []).filter((student) => mode === "calificaciones" || isActiveStudent(student)), [data, mode]);
+  const groups = useMemo(() => Array.from(new Set(availableStudents.map((student) => `${str(student, "grado")} ${str(student, "grupo")}`.trim()))).filter((item) => !/(PRUEBA|TEST)/i.test(item)).sort((a, b) => a.localeCompare(b, "es-MX", { numeric: true })), [availableStudents]);
+  const students = useMemo(() => availableStudents.filter((student) => `${str(student, "grado")} ${str(student, "grupo")}`.trim() === group).sort((a, b) => str(a, "nombre").localeCompare(str(b, "nombre"), "es-MX")), [availableStudents, group]);
   const sessions = useMemo(() => data?.snapshot.sessions.filter((item) => str(item, "parcial_id") === partialId && str(item, "grupo") === group && str(item, "estado") !== "Cancelada").sort((a, b) => str(b, "fecha_clase").localeCompare(str(a, "fecha_clase"))) ?? [], [data, partialId, group]);
   const archivedItems = useMemo(() => data ? listArchivedAcademicItems(data.snapshot) : [], [data]);
   const currentSession = sessions.find((item) => str(item, "sesion_id") === sessionId);
@@ -247,12 +249,13 @@ export function TeacherAcademicModule({ active, mode, partialId, onPartialChange
         score(grade?.ca ?? null),
         score(grade?.ec ?? null),
         score(grade?.ex ?? null),
+        grade?.final10 === null || grade?.final10 === undefined ? "Pendiente" : grade.final10.toFixed(1),
       ].join("\t");
     });
     try {
       await navigator.clipboard.writeText(rows.join("\n"));
       setError("");
-      setMessage("Calificaciones copiadas sin títulos, nombres ni identificadores.");
+      setMessage("Calificaciones y promedio ponderado copiados sin títulos, nombres ni identificadores.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "No se pudieron copiar las calificaciones.");
     }
@@ -540,8 +543,8 @@ export function TeacherAcademicModule({ active, mode, partialId, onPartialChange
     </section>}
 
     {mode === "calificaciones" && <section className="academic-card matrix-card grades-overview">
-      <div className="academic-matrix-header"><div><p className="eyebrow">{group} · {str(partial ?? {}, "nombre")}</p><h3>Resumen del grupo</h3><p>Ordenado por apellidos. Selecciona un nombre para ver el detalle. CA, EC y EXAM se muestran sobre 10.</p></div><div className="session-heading-actions"><button type="button" className="secondary-button compact" onClick={() => void copyGroupGrades()} disabled={!!busy || !students.length}>Copiar calificaciones</button></div></div>
-      <div className="matrix-scroll"><table className="academic-matrix"><thead><tr><th>ID alumno</th><th>Nombre</th><th title="Días de clases impartidas">DIAS</th><th title="Inasistencias del alumno">FAL</th><th title="Tareas y trabajos con calificación cero">TRF</th><th title="Promedio de conducta y actitud registrado por clase">CA</th><th title="Evaluación continua: promedio de tareas y trabajos">EC</th><th title="Calificación del examen">EXAM</th></tr></thead><tbody>{students.map((student) => { const grade = grades.find((item) => item.studentId === str(student, "id")); return <tr key={str(student, "id")}><td>{str(student, "id")}</td><th><button className="text-button" type="button" onClick={() => setDetailStudentId(str(student, "id"))} aria-label={`Ver detalle de ${str(student, "nombre")}`}>{str(student, "nombre")}</button></th><td>{grade?.days ?? 0}</td><td>{grade?.absences ?? 0}</td><td>{grade?.missingTasks ?? 0}</td><td>{grade?.ca === null || grade?.ca === undefined ? "—" : (grade.ca / 10).toFixed(1)}</td><td>{grade?.ec === null || grade?.ec === undefined ? "Pendiente" : (grade.ec / 10).toFixed(1)}</td><td>{grade?.ex === null || grade?.ex === undefined ? "Pendiente" : (grade.ex / 10).toFixed(1)}</td></tr>; })}</tbody></table></div>
+      <div className="academic-matrix-header"><div><p className="eyebrow">{group} · {str(partial ?? {}, "nombre")}</p><h3>Resumen del grupo</h3><p>Ordenado por apellidos. Selecciona un nombre para ver el detalle. El promedio final pondera CA 10%, EC 40% y EXAM 50%; requiere los tres componentes.</p></div><div className="session-heading-actions"><button type="button" className="secondary-button compact" onClick={() => void copyGroupGrades()} disabled={!!busy || !students.length}>Copiar calificaciones</button></div></div>
+      <div className="matrix-scroll"><table className="academic-matrix"><thead><tr><th>ID alumno</th><th>Nombre</th><th title="Días de clases impartidas">DIAS</th><th title="Inasistencias del alumno">FAL</th><th title="Tareas y trabajos con calificación cero">TRF</th><th title="Promedio de conducta y actitud registrado por clase">CA</th><th title="Evaluación continua: promedio de tareas y trabajos">EC</th><th title="Calificación del examen">EXAM</th><th title="Promedio final ponderado: CA 10%, EC 40% y EXAM 50%">PROMEDIO</th></tr></thead><tbody>{students.map((student) => { const grade = grades.find((item) => item.studentId === str(student, "id")); return <tr key={str(student, "id")}><td>{str(student, "id")}</td><th><button className="text-button" type="button" onClick={() => setDetailStudentId(str(student, "id"))} aria-label={`Ver detalle de ${str(student, "nombre")}`}>{str(student, "nombre")}</button></th><td>{grade?.days ?? 0}</td><td>{grade?.absences ?? 0}</td><td>{grade?.missingTasks ?? 0}</td><td>{grade?.ca === null || grade?.ca === undefined ? "—" : (grade.ca / 10).toFixed(1)}</td><td>{grade?.ec === null || grade?.ec === undefined ? "Pendiente" : (grade.ec / 10).toFixed(1)}</td><td>{grade?.ex === null || grade?.ex === undefined ? "Pendiente" : (grade.ex / 10).toFixed(1)}</td><td>{grade?.final10 === null || grade?.final10 === undefined ? "Pendiente" : grade.final10.toFixed(1)}</td></tr>; })}</tbody></table></div>
       {!students.length && <p className="dashboard-empty">No hay alumnos registrados en este grupo.</p>}
     </section>}
 

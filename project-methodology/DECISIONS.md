@@ -12,11 +12,11 @@
 
 ## DEC-002 — Usar Producción como referencia y limitar cambios en GitHub
 
-- **Fecha / estado:** 2026-09-30 · Aceptada; actualizada para esta adopción documental.
+- **Fecha / estado:** 2026-09-30 · Aceptada; su excepción de Git se aplicó sólo a la adopción documental v1.0.
 - **Contexto:** el usuario revisa y mejora `docencia.integratech.app` directamente; pidió no hacer nada en GitHub por ahora.
 - **Opciones consideradas:** usar `origin/main` como única fuente operativa; mantener el flujo actual de publicación directa en Vercel/Apps Script; reanudar GitHub tras una nueva decisión.
-- **Decisión y razón:** tratar Producción como referencia operativa. El usuario autorizó una rama de revisión, un commit y un push que incluyan sólo los documentos de esta adopción. Esa autorización no abarca los cambios funcionales preexistentes, merge ni deployment.
-- **Consecuencias:** el checkout local y Producción pueden divergir; el SHA remoto no identifica necesariamente lo desplegado. Para el trabajo funcional sigue pausada la sincronización con GitHub; la rama documental es una excepción acotada al respaldo remoto habitual de ALEX v1.0.
+- **Decisión y razón:** tratar Producción como referencia operativa. La autorización del usuario del 2026-09-30 para una rama de revisión, commit y push cubrió únicamente la adopción documental v1.0. No abarcó cambios funcionales preexistentes, merge ni deployment.
+- **Consecuencias:** el checkout local y Producción pueden divergir; el SHA remoto no identifica necesariamente lo desplegado. Para el trabajo funcional sigue pausada la sincronización con GitHub salvo el alcance funcional específico de DEC-012. La adopción documental v1.2 permanece local hasta que exista una autorización explícita para publicarla en Git.
 - **Mitigación / riesgo:** antes de publicar, comparar el código con el deployment vivo y conservar los cambios locales; no afirmar respaldo Git de cambios que no se hayan publicado al remoto.
 - **Alcance / revisión:** Vercel, Apps Script y repositorio Docencia. Revisar antes de reanudar trazabilidad o publicación de cambios funcionales.
 - **Referencias:** `AGENTS.md`, `PROJECT_STATE.md`, `TODO.md`.
@@ -31,7 +31,7 @@
 - **Alcance / revisión:** acceso del alumno y datos que se muestran a través de él. Revisar antes de ampliar el tipo o sensibilidad de la información expuesta, o cuando el usuario solicite otro mecanismo.
 - **Referencias:** `app/api/access/route.ts`, `AGENTS.md`, `PROJECT_CONTEXT.md`.
 
-## DEC-004 — Adoptar ALEX DEVELOPMENT STANDARD v1.0 con memoria en `project-methodology/`
+## DEC-004 — Adoptar ALEX DEVELOPMENT STANDARD con memoria en `project-methodology/`
 
 - **Fecha / estado:** 2026-09-30 · Aceptada; adopción documental y piloto DOC-001 completados.
 - **Contexto:** futuros agentes necesitan contexto persistente y cierre trazable sin depender de conversaciones.
@@ -40,6 +40,37 @@
 - **Consecuencias:** la primera versión de adopción había dejado los documentos específicos del producto en la raíz; esta corrección los reubicó a la estructura indicada por v1.0, eliminó la duplicación y mantiene `AGENTS.md` como puerta de entrada. El piloto DOC-001 comparó los encabezados vivos de Sheets y marcó las tablas antiguas de `project.config.json` como no autoritativas; la adopción documental queda completada sin despliegue ni cambio funcional.
 - **Alcance / revisión:** documentación del repositorio Docencia. Revisar si cambia la fuente/versionado del estándar o si una tarea futura evidencia que la guía local ya no cumple el método.
 - **Referencia exacta consultada:** `alexsennin/alex-development-standard/standards/v1.0/`, commit `e0c356e219771cbab456fed8e52aa6a86f40a70d`.
+
+### Actualización DEC-004 — Adopción de v1.2 (antecedente)
+
+- **Fecha / estado:** 2026-10-06 · Aceptada para Docencia por solicitud del usuario; sustituye v1.0 como metodología vigente. DOC-001 permanece como evidencia histórica de la primera adopción.
+- **Contexto y opciones:** el repositorio fuente recomienda v1.2 para adopción gradual; se consideró conservar v1.0 o adoptar v1.2 contrastando el proyecto existente.
+- **Decisión y razón:** adoptar v1.2 por referencia al paquete canónico, conservar `AGENTS.md` y `project-methodology/` como autoridad local, y aplicar modos y niveles proporcionales. La ruta rápida de RELEASE aplica sólo cuando los efectos y la autorización del destino lo permiten; las reglas específicas de Docencia prevalecen para sus servicios y datos. El agente semanal es opcional y no se programa por esta adopción.
+- **Consecuencias y límites:** no se copian documentos normativos, no se alteran código de ejecución, datos ni configuración remota; la documentación se actualiza sólo cuando cambia su verdad. Git, Vercel, Neon y Apps Script conservan políticas y estados separados. La validación del piloto documental v1.2 se registra en `PROJECT_STATE.md`.
+- **Referencia exacta consultada:** `alexsennin/alex-development-standard/standards/v1.2/`, commit `b083cd99a7007c784e8e13e255aef8446cf640d8`.
+
+### Actualización DEC-004 — Adopción de v1.3
+
+- **Fecha / estado:** 2026-10-06 · Aceptada por solicitud del usuario; v1.3 reemplaza v1.2 como versión vigente de Docencia.
+- **Contexto y decisión:** el repositorio oficial publicó v1.3 como vigente el 2026-10-06. Docencia adopta esa revisión y conserva la fuente normativa central en sólo lectura. Se actualizan las referencias de entrada y la memoria del proyecto; no se copian guías normativas.
+- **Adaptación local:** v1.3 separa modo, nivel de riesgo y capacidad cognitiva. El runtime actual no enruta automáticamente modelos/reasoning por microtarea y las reglas activas limitan la delegación. Se usa el fallback manual: acotar microtareas por comportamiento verificable, emplear la capacidad disponible cuando baste y elevar la limitación sólo si una tarea requiere una capacidad no disponible. La delegación no cambia alcance, permiso o destino.
+- **Piloto y verificación:** adopción documental PATCH/Nivel 1; análisis de fuente y perfil como EXPERT, actualización de referencias como FOCUSED. Se verifican enlaces/rutas, estructura existente y `git diff --check`; no se ejecutan pruebas de aplicación, ni se consulta/escribe Producción.
+- **Referencia exacta consultada:** `alexsennin/alex-development-standard/standards/v1.3/`, commit `8b275ede744a2fa393efaed1bf85192ee7efc7ba`.
+
+### Actualización DEC-004 — Adopción de v1.3.1
+
+- **Fecha / estado:** 2026-10-06 · Aceptada por solicitud del usuario; v1.3.1 reemplaza v1.3 como versión vigente de Docencia.
+- **Contexto y decisión:** la rama principal del repositorio canónico identifica v1.3.1 como vigente y obligatoria para trabajo nuevo/activo; Docencia actualiza su puerta de entrada y perfil local antes de continuar trabajo sustantivo. No se copian documentos normativos ni se instala el agente semanal opcional.
+- **Adaptación local:** `CORE.md` es el contrato operativo mínimo y se consulta desde el origen central. Se conservan las reglas específicas de Docencia; publicación/push y despliegue a Producción se tratan como operaciones distintas, y los cambios en Producción requieren autorización explícita para esa acción y destino. Señales de alto riesgo requieren análisis EXPERT antes de editar; el runtime usa compatibilidad manual y respeta restricciones de delegación.
+- **Consecuencias y límites:** la adopción modifica sólo documentación. No autoriza Git remoto, Producción ni una operación de datos. PAD-001 fue aplicado y desplegado antes por su autorización propia; la adopción no altera ni repite esas operaciones. No se exige piloto separado.
+- **Referencia exacta consultada:** `alexsennin/alex-development-standard/standards/v1.3.1/`, commit `d2b0a3efc194bf0cf1c74eeab9fa432c2ff1f3d7`.
+
+### Actualización DEC-004 — Adopción de ARC Development Standard v1.3.2
+
+- **Fecha / estado:** 2026-10-06 · Adoptada por instrucción explícita del usuario; sustituye v1.3.1 como identidad y versión vigentes de la metodología de Docencia.
+- **Decisión:** ARC Development Standard v1.3.2 es la metodología del proyecto; AXIOM v0.1 es su runtime oficial, Codex CLI su motor de ejecución y Luna / Sol / Astra la familia de modelos que AXIOM selecciona según capacidad. Se conserva la base operativa local ya documentada para modo, riesgo, capacidad, autorización y validación. No se inventan cambios normativos adicionales.
+- **Fuente y límite:** no se encontró ni verificó una URL canónica publicada para ARC v1.3.2 durante esta adopción. La edición registra el nombre, versión y relación con AXIOM previamente definidos por el usuario; no copia documentos del estándar ni modifica el repositorio fuente ALEX.
+- **Alcance:** actualización documental de Docencia. No modifica código, esquema, datos, GitHub ni Producción.
 
 ## DEC-005 — Publicar los cambios funcionales para revisión en Producción
 
@@ -119,7 +150,7 @@ El usuario indicó incluir retardos del periodo además de comentarios. La versi
 
 - **Fecha / estado:** 2026-10-04 · Implementada, publicada y verificada en Producción.
 - **Decisión:** en `Editar calificación`, además de los puntajes por reactivo, la docente puede activar una nota final manual sobre 10. Guardar esa nota establece `manualGradeLocked`; las reevaluaciones de IA del intento se bloquean y los resultados de IA que estuvieran en curso no se aplican. El cálculo derivado por reactivos se conserva y vuelve a mostrarse al retirar el ajuste.
-- **Consecuencias:** se mantiene separada la nota calculada de la manual; cada cambio requiere motivo y auditoría. La matriz marca como Manual la nota fijada. No se altera la respuesta ni se recalifican otros alumnos.
+- **Consecuencias:** se mantiene separada la nota calculada de la manual; cada cambio requiere motivo y auditoría. La matriz marca como Manual la nota fijada. No se altera la respuesta ni se recalifican otros alumnos. `Calificaciones` convierte la nota final manual sobre 10 al componente Examen sobre 100 y la prioriza sobre el puntaje por reactivos, incluso si queda evaluación de IA pendiente; sin ajuste manual usa puntajes por reactivo/maxScore. El cambio de puntaje por reactivo renueva el snapshot del parcial.
 - **Publicación y evidencia:** migración `0007_lucky_maestro.sql` aplicada desde Neon SQL Editor como `neondb_owner` sin ampliar permisos del runtime; hash y columnas verificados. Vercel `dpl_gwxjwcP1XHzjL7u2GPD975cQbfZK` quedó READY. Recorrido autenticado de Producción confirmó el control editable en 3.º A; se cerró sin modificar notas. GitHub `main` quedó sincronizada en `5ea7671`.
 - **Referencias:** migración `0007_lucky_maestro.sql`, `components/teacher-exam-grade-matrix.tsx`, `lib/exam-attempt-postgres.ts`.
 
@@ -130,3 +161,17 @@ El usuario indicó incluir retardos del periodo además de comentarios. La versi
 - **Consecuencias:** los puntos manuales cuentan para el resultado final aun si la respuesta está vacía. La pregunta vacía no se manda a IA ni queda disponible para reevaluación; el cambio conserva motivo y auditoría.
 - **Validación y publicación:** integración con fixtures sintéticos confirma fila ausente antes de editar, puntos calculados, respuesta vacía y cero evaluación IA. Vercel `dpl_CHsvJha7S3N8ddpQyL4bVpuqLQwQ` quedó READY; UI autenticada de Producción mostró todos los reactivos habilitados para un intento sin respuestas, cerrado sin guardar. GitHub `main`: `6894b05`.
 - **Referencias:** `components/teacher-exam-grade-matrix.tsx`, `lib/exam-attempt-postgres.ts`, `tests/exam-attempt-postgres.integration.mjs`.
+
+## DEC-016 — Administrar el padrón con catálogos y baja reversible
+
+- **Fecha / estado:** 2026-10-06 · Aceptada dentro de la solicitud PAD-001; código local implementado, Producción pendiente.
+- **Decisión:** el padrón docente permite crear, editar, desactivar y restaurar alumnos. Desactivar conserva historial y auditoría, y bloquea acceso/captura nueva. Los catálogos administrables son Grado (`students.nivel`) y Grupo (etiqueta visible asociada al grado, más su correspondencia heredada `students.grado`/`students.grupo`).
+- **Formato:** el `.xlsx` contiene `ID`, `Nombre alumno` y `Grupo y grado`; admite el encabezado `Nombre alumbo` solicitado inicialmente. La última columna valida exactamente la pareja activa del catálogo, salvo mayúsculas y espacios extra. Los IDs existentes conservan su valor canónico; IDs nuevos requieren confirmación; filas omitidas no producen bajas; los cambios se aplican con auditoría en una transacción.
+- **Alcance y estado:** migración aditiva `0008_striped_toad.sql` aplicada en Docker y validada en una rama temporal de Neon; pendiente autorización específica para completar la migración de `production` y después publicar/verificar en Vercel. No se sincronizan datos entre bases.
+- **Referencias:** `app/api/teacher/students/route.ts`, `components/teacher-student-management.tsx`, `lib/student-registry-postgres.ts`, `db/migrations/0008_striped_toad.sql`, `TODO.md`.
+
+### Actualización DEC-016 — Consultar alumnos por grupo
+
+- **Fecha / estado:** 2026-10-06 · Solicitada por el usuario; implementada en el checkout local.
+- **Decisión:** la vista Alumnos requiere seleccionar un grupo activo antes de mostrar estudiantes y limita búsqueda, paginación e inclusión de inactivos a ese grupo.
+- **Alcance:** sólo presentación del padrón; no cambia API, esquema, asignaciones, ni datos. Despliegue y aceptación de Producción quedan pendientes.

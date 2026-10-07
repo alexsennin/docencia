@@ -152,6 +152,11 @@ export function calculateStudentPartial(snapshot: AcademicSnapshot, student: Aca
   for (const exam of eligible) {
     const attempts = snapshot.attempts.filter((attempt) => value(attempt, "examen_id") === value(exam, "examen_id") && sameId(attempt.alumno_id, studentId));
     const attempt = attempts.find((item) => value(item, "estado") === "Definitivo") ?? attempts.find((item) => value(item, "estado") === "Provisional");
+    const manualGrade = truthy(attempt?.calificacion_manual_bloqueada) ? num(attempt?.calificacion_manual_10) : null;
+    if (manualGrade !== null) {
+      examScores.push(Math.max(0, Math.min(100, manualGrade * 10)));
+      continue;
+    }
     if (!attempt || value(attempt, "estado") !== "Definitivo" || truthy(attempt.ai_pendiente)) { examPending = true; continue; }
     const score = num(attempt.puntaje_total);
     const maximum = num(exam.puntaje_maximo) ?? 100;

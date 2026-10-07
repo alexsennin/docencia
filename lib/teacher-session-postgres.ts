@@ -41,7 +41,7 @@ function toSnapshotRow(source: Row, columns: Record<string, string>) {
 }
 
 const partialColumns = { parcial_id: "id", nombre: "name", orden: "order", ciclo_escolar: "schoolYear", materia: "subject", estado: "status", fecha_inicio: "startsOn", fecha_cierre: "closesOn", peso_asistencias: "attendanceWeight", peso_trabajos_clase: "classworkWeight", peso_tareas: "tasksWeight", peso_evaluacion_continua: "continuousAssessmentWeight", peso_conducta: "conductWeight", peso_actitud: "attitudeWeight", peso_examen: "examWeight", ponderacion_total: "totalWeight", created_at: "createdAt", updated_at: "updatedAt", modo_evaluacion_continua: "continuousAssessmentMode" };
-const studentColumns = { id: "id", nombre: "name", nivel: "level", grado: "grade", grupo: "group", ciclo_escolar: "schoolYear", asignacion: "assignment", hoja_origen: "sourceSheet" };
+const studentColumns = { id: "id", nombre: "name", nivel: "level", grado: "grade", grupo: "group", ciclo_escolar: "schoolYear", asignacion: "assignment", hoja_origen: "sourceSheet", activo: "active", actualizado_at: "updatedAt", desactivado_at: "deactivatedAt", desactivado_por: "deactivatedBy" };
 const sessionColumns = { sesion_id: "id", parcial_id: "partialId", fecha_clase: "classDate", grupo: "group", materia: "subject", tema: "topic", estado: "status", observaciones: "notes", registrado_por: "recordedBy", created_at: "createdAt", updated_at: "updatedAt", estado_captura: "captureStatus", pase_lista_completo: "rollCallComplete" };
 const attendanceColumns = { asistencia_id: "id", sesion_id: "sessionId", parcial_id: "partialId", alumno_id: "studentId", grupo: "group", fecha_clase: "classDate", estado: "status", observaciones: "notes", registrado_por: "recordedBy", created_at: "createdAt", updated_at: "updatedAt" };
 const taskColumns = { tarea_id: "id", parcial_id: "partialId", grupo: "group", nombre: "name", tipo: "type", fecha_asignacion: "assignedOn", fecha_entrega: "dueOn", puntaje_maximo: "maxScore", obligatoria: "mandatory", activa: "active", created_at: "createdAt", updated_at: "updatedAt", sesion_id: "sessionId", descripcion: "description", peso_ec: "continuousAssessmentWeight", estado_banco: "bankStatus", sesion_calificacion_id: "gradingSessionId" };
@@ -50,7 +50,7 @@ const conductColumns = { registro_id: "id", parcial_id: "partialId", alumno_id: 
 const gradeColumns = { calificacion_id: "id", parcial_id: "partialId", alumno_id: "studentId", grupo: "group", dias_clase: "classDays", faltas: "absences", tareas_faltantes: "missingTasks", evaluacion_continua: "continuousAssessment", conducta: "conduct", actitud: "attitude", examen: "exam", calificacion_parcial: "partialGrade", calificacion_10: "gradeOnTen", estado: "status", comentario_docente: "teacherComment", reporte_ai_estado: "aiReportStatus", innovat_estado: "innovatStatus", updated_at: "updatedAt", calificacion_ca: "conductAttitudeGrade", modo_evaluacion_continua: "continuousAssessmentMode", detalle_ec_json: "continuousAssessmentDetails", version_calculo: "calculationVersion" };
 const examColumns = { examen_id: "id", parcial_id: "partialId", nombre: "name", materia: "subject", grado: "grade", grupo: "group", estado: "status", fecha_apertura: "opensAt", fecha_cierre: "closesAt", duracion_minutos: "durationMinutes", puntaje_maximo: "maxScore", requiere_pantalla_completa: "requiresFullscreen", instrucciones: "instructions", created_at: "createdAt", updated_at: "updatedAt", version: "version", examen_origen_id: "sourceExamId", proveedor_ia: "aiProvider" };
 const assignmentColumns = { asignacion_id: "id", alumno_id: "studentId", examen_id: "examId", estado: "status", created_at: "createdAt", updated_at: "updatedAt" };
-const attemptColumns = { intento_id: "id", examen_id: "examId", parcial_id: "partialId", alumno_id: "studentId", grupo: "group", estado: "status", inicio_at: "startedAt", fin_at: "finishedAt", tiempo_limite_min: "timeLimitMinutes", puntaje_automatico: "automaticScore", puntaje_ai: "aiScore", puntaje_total: "totalScore", calificacion_10: "gradeOnTen", ai_pendiente: "aiPending", bloqueo_activo: "locked", created_at: "createdAt", updated_at: "updatedAt" };
+const attemptColumns = { intento_id: "id", examen_id: "examId", parcial_id: "partialId", alumno_id: "studentId", grupo: "group", estado: "status", inicio_at: "startedAt", fin_at: "finishedAt", tiempo_limite_min: "timeLimitMinutes", puntaje_automatico: "automaticScore", puntaje_ai: "aiScore", puntaje_total: "totalScore", calificacion_10: "gradeOnTen", calificacion_manual_10: "manualGradeOnTen", calificacion_manual_bloqueada: "manualGradeLocked", ai_pendiente: "aiPending", bloqueo_activo: "locked", created_at: "createdAt", updated_at: "updatedAt" };
 const reportColumns = { reporte_id: "id", parcial_id: "partialId", alumno_id: "studentId", tipo: "type", estado: "status", resumen: "summary", fortalezas: "strengths", areas_oportunidad: "opportunities", recomendaciones_json: "recommendations", evidencias_json: "evidence", visibilidad_alumno: "studentVisible", revisado_por: "reviewedBy", revisado_at: "reviewedAt", created_at: "createdAt", updated_at: "updatedAt" };
 
 export async function getTeacherAcademicSnapshotInPostgres(): Promise<AcademicSnapshot> {
@@ -373,7 +373,7 @@ export async function saveClassSessionInPostgres(payload: Row) {
   return db.transaction(async (tx) => {
     const [partial] = await tx.select().from(academicPeriods).where(eq(academicPeriods.id, partialId)).for("update").limit(1);
     if (!partial || partial.status === "Cerrado") throw new Error("El parcial no está disponible para captura.");
-    const roster = (await tx.select().from(students)).filter((student) => groupKey(student.grade, student.group) === group);
+    const roster = (await tx.select().from(students)).filter((student) => student.active && groupKey(student.grade, student.group) === group);
     if (!roster.length) throw new Error("El grupo no tiene alumnos registrados.");
     const matches = (await tx.select().from(classSessions).where(and(
       eq(classSessions.partialId, partialId), eq(classSessions.group, group), eq(classSessions.classDate, date),
@@ -523,7 +523,7 @@ export async function saveSessionWorkspaceInPostgres(payload: Row) {
     if (!session.group) throw new Error("La sesión no tiene un grupo válido.");
     const [partial] = await tx.select().from(academicPeriods).where(eq(academicPeriods.id, session.partialId)).limit(1);
     if (!partial || partial.status === "Cerrado") throw new Error("El parcial no está disponible para captura.");
-    const rosterRows = (await tx.select().from(students)).filter((student) => groupKey(student.grade, student.group) === session.group);
+    const rosterRows = (await tx.select().from(students)).filter((student) => student.active && groupKey(student.grade, student.group) === session.group);
     if (!rosterRows.length || rosterRows.length > 300) throw new Error("La sesión debe tener entre 1 y 300 alumnos registrados.");
     const roster = new Map(rosterRows.map((student) => [normalizeId(student.id), student]));
     const normalizedAttendance = uniqueRosterEntry(attendanceInputs, roster, "El pase de lista incluye un alumno inválido o repetido.")

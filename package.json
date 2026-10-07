@@ -16,6 +16,7 @@
     "verify:postgres-backup": "node scripts/backup-postgres.mjs",
     "build:ca-rubric-worker": "node scripts/build-ca-rubric-worker.mjs",
     "test:student-access": "node --test tests/student-access.integration.mjs",
+    "test:student-roster": "node --conditions=react-server --experimental-strip-types --test tests/student-roster-file.test.mjs tests/student-registry.integration.mjs",
     "test:teacher-session": "node --conditions=react-server --experimental-strip-types --test tests/teacher-session.integration.mjs",
     "test:grade-snapshot": "node --conditions=react-server --experimental-strip-types --test tests/grade-snapshot-postgres.integration.mjs",
     "test:exam-attempt": "node --conditions=react-server --experimental-strip-types --test tests/exam-attempt-postgres.integration.mjs",
@@ -41,7 +42,8 @@
     "pg": "^8.23.1",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "server-only": "^0.0.1"
+    "server-only": "^0.0.1",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

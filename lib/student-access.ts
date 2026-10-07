@@ -73,7 +73,7 @@ export async function lookupStudentInPostgres(studentId: string): Promise<{ stud
     .from(students)
     .where(sql`upper(trim(${students.id})) = ${normalizedId}`)
     .limit(1);
-  if (!studentRow) throw new Error("No se encontró el ID escolar");
+  if (!studentRow || !studentRow.active) throw new Error("No se encontró el ID escolar");
 
   const student: Student = {
     id: studentRow.id,

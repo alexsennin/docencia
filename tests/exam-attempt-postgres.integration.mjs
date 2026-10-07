@@ -4,6 +4,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { closeDatabaseForTests, getDatabase } from "../db/client.ts";
 import { academicPeriods, aiEvaluations, auditEvents, examAnswers, examAssignments, examAttempts, examQuestions, exams, grades, students } from "../db/schema.ts";
 import { finalizeExamAttemptByTeacherInPostgres, getTeacherExamResultsInPostgres, reevaluateOpenAnswerInPostgres, revokeExamAttemptsInPostgres, saveExamAnswersInPostgres, startExamAttemptInPostgres, submitExamAttemptInPostgres, unlockExamAttemptInPostgres, updateManualExamScoresInPostgres } from "../lib/exam-attempt-postgres.ts";
+import { refreshGradeSnapshotsInPostgres } from "../lib/teacher-session-postgres.ts";
 
 const baseUrl = process.env.E2E_BASE_URL || "http://127.0.0.1:13000";
 const examId = "SYNTH-EXAM-ATTEMPT-001";
@@ -173,6 +174,9 @@ test("intento de examen Postgres: autorización, reanudación, autosave, bloqueo
   assert.equal(manuallyGraded.result.aiPending, false, "asignar puntos a una pregunta vacía no la envía a IA");
   assert.equal(manuallyGraded.result.totalScore, 7);
   assert.equal(manuallyGraded.result.grade10, 4.67);
+  await refreshGradeSnapshotsInPostgres("SYNTH-P1");
+  let [examGradeSnapshot] = await db.select().from(grades).where(and(eq(grades.partialId, "SYNTH-P1"), eq(grades.studentId, studentId)));
+  assert.equal(Number(examGradeSnapshot.exam), 46.67, "los puntajes manuales por pregunta se reflejan en Calificaciones sobre el puntaje máximo del examen");
   const [manualAnswer] = await db.select().from(examAnswers).where(eq(examAnswers.id, scoredAnswer.id));
   assert.equal(Number(manualAnswer.manualScore), 4);
   assert.equal(manualAnswer.answer, "A", "la edición de puntaje conserva la respuesta original");
@@ -192,6 +196,9 @@ test("intento de examen Postgres: autorización, reanudación, autosave, bloqueo
     reason: "Calificación final sintética fijada por docente.",
   });
   assert.equal(fixedFinalGrade.result.grade10, 7.25);
+  await refreshGradeSnapshotsInPostgres("SYNTH-P1");
+  [examGradeSnapshot] = await db.select().from(grades).where(and(eq(grades.partialId, "SYNTH-P1"), eq(grades.studentId, studentId)));
+  assert.equal(Number(examGradeSnapshot.exam), 72.5, "la calificación final manual del examen sustituye los puntos calculados en Calificaciones");
   const fixedGradeReport = (await getTeacherExamResultsInPostgres()).results.find((item) => item.attemptId === started.attemptId);
   assert.equal(fixedGradeReport.grade10, 7.25);
   assert.equal(fixedGradeReport.manualGradeLocked, true);

@@ -76,6 +76,17 @@ test("un intento provisional con IA pendiente no cuenta como EX final", () => {
   assert.equal(grade.final10, null);
 });
 
+test("la calificación final fijada manualmente sustituye el puntaje calculado en Calificaciones", () => {
+  const snapshot = { ...base, attempts: [{
+    ...base.attempts[0], estado: "Provisional", ai_pendiente: "TRUE", puntaje_total: "40",
+    calificacion_manual_bloqueada: "TRUE", calificacion_manual_10: "7.25",
+  }] };
+  const grade = calculateStudentPartial(snapshot, student, partial, now);
+  assert.equal(grade.ex, 72.5);
+  assert.equal(grade.final100, 62.25);
+  assert.equal(grade.final10, 6.225);
+});
+
 test("la matriz muestra el EX persistido aunque la consulta de intentos no lo reconstruya", () => {
   const snapshot = { ...base, attempts: [], grades: [{ parcial_id: "p1", alumno_id: "A1", calificacion_ca: "", examen: 84 }] };
   const grade = calculateStudentPartial(snapshot, student, partial, now);

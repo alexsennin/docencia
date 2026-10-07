@@ -5,6 +5,7 @@ Inventario estático de los componentes principales del checkout de Docencia. De
 | Componente | Archivo | Responsabilidad observada |
 | --- | --- | --- |
 | `TeacherDashboard` | [`teacher-dashboard.tsx`](../../components/teacher-dashboard.tsx) | Coordina navegación y vistas del panel docente; mantiene el selector de parcial y el formulario `Nuevo parcial`, cuyo guardado remoto muestra `ProgressOverlay`. |
+| `TeacherStudentManagement` | [`teacher-student-management.tsx`](../../components/teacher-student-management.tsx) | Administra el padrón y los catálogos; en Alumnos requiere seleccionar un grupo antes de mostrar la lista, que queda filtrada a ese grupo con búsqueda, paginación y opción de incluir inactivos. Agregar alumno se habilita tras seleccionar grupo y precarga esa selección en la ficha nueva. |
 | `TeacherAcademicModule` | [`teacher-academic-module.tsx`](../../components/teacher-academic-module.tsx) | Captura y revisa sesiones, asistencia, comentarios y actividades; consulta calificaciones y presenta el listado general de sesiones, tareas y trabajos archivados. |
 | `TeacherCaRubric` | [`teacher-ca-rubric.tsx`](../../components/teacher-ca-rubric.tsx) | Inicia y presenta el progreso C.A. por grupo; en Postgres avanza jobs persistidos por petición autenticada y los reanuda al volver a abrir la sección. |
 | `TeacherExamAuthoring` | [`teacher-exam-authoring.tsx`](../../components/teacher-exam-authoring.tsx) | Recibe materiales, solicita un borrador de examen y presenta controles de revisión/publicación. |

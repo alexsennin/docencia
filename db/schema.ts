@@ -10,6 +10,7 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 const instant = (name: string) => timestamp(name, { withTimezone: true, mode: "string" });
 const calendarDate = (name: string) => date(name, { mode: "string" });
@@ -25,8 +26,47 @@ export const students = pgTable(
     schoolYear: text("ciclo_escolar"),
     assignment: text("asignacion"),
     sourceSheet: text("hoja_origen"),
+    active: boolean("activo").notNull().default(true),
+    updatedAt: instant("actualizado_at").notNull().defaultNow(),
+    deactivatedAt: instant("desactivado_at"),
+    deactivatedBy: text("desactivado_por"),
   },
-  (table) => [index("students_school_year_grade_group_idx").on(table.schoolYear, table.grade, table.group)],
+  (table) => [
+    index("students_school_year_grade_group_idx").on(table.schoolYear, table.grade, table.group),
+    uniqueIndex("students_normalized_id_unique").on(sql`upper(btrim(${table.id}))`),
+    index("students_active_grade_group_idx").on(table.active, table.level, table.grade, table.group),
+  ],
+);
+
+export const studentGrades = pgTable(
+  "student_grades",
+  {
+    id: text("grado_id").primaryKey(),
+    name: text("nombre").notNull(),
+    active: boolean("activo").notNull().default(true),
+    createdAt: instant("created_at").notNull().defaultNow(),
+    updatedAt: instant("updated_at").notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("student_grades_normalized_name_unique").on(sql`upper(btrim(${table.name}))`)],
+);
+
+export const studentGroups = pgTable(
+  "student_groups",
+  {
+    id: text("grupo_id").primaryKey(),
+    gradeId: text("grado_id").notNull().references(() => studentGrades.id),
+    name: text("nombre").notNull(),
+    studentGrade: text("grado_academico").notNull(),
+    section: text("grupo_academico").notNull(),
+    active: boolean("activo").notNull().default(true),
+    createdAt: instant("created_at").notNull().defaultNow(),
+    updatedAt: instant("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("student_groups_grade_normalized_name_unique").on(table.gradeId, sql`upper(btrim(${table.name}))`),
+    uniqueIndex("student_groups_legacy_pair_unique").on(table.gradeId, sql`upper(btrim(${table.studentGrade}))`, sql`upper(btrim(${table.section}))`),
+    index("student_groups_grade_active_idx").on(table.gradeId, table.active),
+  ],
 );
 
 export const academicPeriods = pgTable(

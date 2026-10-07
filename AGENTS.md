@@ -18,15 +18,17 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## Metodología y puerta de entrada
 
-Este proyecto adopta **ALEX DEVELOPMENT STANDARD v1.0**.
+Este proyecto adopta **ARC Development Standard v1.3.2** (2026-10-06).
 
-- `SOURCE_REPO`: `alexsennin/alex-development-standard`
-- `SOURCE_VERSION`: `standards/v1.0/`
+- `STANDARD`: `ARC Development Standard v1.3.2`
+- `RUNTIME`: `AXIOM v0.1`
+- `EXECUTION_ENGINE`: Codex CLI
+- `MODEL_FAMILY`: Luna / Sol / Astra, seleccionados por AXIOM según la capacidad requerida
 - `TARGET_REPO`: `alexsennin/docencia`
 - `TARGET_ROOT`: raíz de este checkout
 - `TARGET_METHODOLOGY_DIR`: `project-methodology/`
 
-La metodología central es únicamente de lectura durante las adopciones; su fuente autoritativa es el [repositorio ALEX](https://github.com/alexsennin/alex-development-standard/tree/main/standards/v1.0/). No copies ni adaptes sus documentos normativos dentro de Docencia. La memoria específica del producto vive en `project-methodology/`.
+ARC v1.3.2 es la metodología vigente y AXIOM v0.1 su runtime oficial; Codex CLI es el motor de ejecución y AXIOM selecciona Luna, Sol o Astra según la capacidad. La adopción conserva las reglas de trabajo ya asentadas en este archivo (modo, riesgo, capacidad, escalamiento y autorización) y no copia documentos normativos centrales dentro de Docencia. La referencia canónica publicada de ARC v1.3.2 aún no está registrada en este checkout; no atribuyas reglas nuevas a esa fuente hasta que esté disponible. La memoria específica del producto vive en `project-methodology/`.
 
 Antes de trabajar, lee:
 
@@ -36,7 +38,7 @@ Antes de trabajar, lee:
 - `project-methodology/TODO.md`
 - `project-methodology/DECISIONS.md`
 
-Para UI, lee también `project-methodology/design/`. La adopción de ALEX DEVELOPMENT STANDARD v1.0 y su piloto de Nivel 1 (`DOC-001`) quedaron completados el 2026-09-30; consulta `project-methodology/PROJECT_STATE.md` para el alcance y la evidencia. Esto no autoriza cambios en Producción.
+Para UI, lee también `project-methodology/design/`. Las reglas operativas heredadas clasifican cada intervención por modo (PATCH, FEATURE, SYSTEM, CHECK o RELEASE), nivel de riesgo (1–4) y capacidad cognitiva necesaria. Las señales de auth, permisos, secretos, pagos, migraciones, datos persistentes, borrados, infraestructura, Producción y contratos entre servicios exigen análisis EXPERT antes de editar; el riesgo y la complejidad cognitiva se evalúan por separado. El perfil AXIOM y sus límites para este entorno están en `PROJECT_STATE.md`. Publicar o hacer push no autoriza Producción: aplica sólo una autorización explícita que cubra esa operación y destino. Aplica verificaciones proporcionales y actualiza únicamente los documentos cuya verdad cambió. Las versiones anteriores se conservan como historial; la adopción ARC no activa automatizaciones opcionales.
 
 ## Reglas propias del proyecto
 
@@ -45,14 +47,14 @@ Para UI, lee también `project-methodology/design/`. La adopción de ALEX DEVELO
 - Actualización del usuario del 2026-09-30: los cambios funcionales solicitados deben quedar desplegados en Producción, porque allí los revisa. Tras implementar y validar, publicar en el proyecto existente de Vercel y verificar dominio y rutas pertinentes; actualizar el puente existente sólo si el cambio lo requiere, comparándolo antes con el origen vivo. Esta instrucción autoriza la publicación funcional y mantiene GitHub pausado: no autoriza commits, pushes, PR ni merge. Los cambios exclusivamente documentales no requieren despliegue.
 
 - La referencia operativa es Producción en `https://docencia.integratech.app`; Neon PostgreSQL es la fuente operativa desde el corte del 2026-10-01. Docker local mantiene datos independientes; Google Sheets/Apps Script se conservan como legado sin sincronización continua. `project.config.json` no se usa desde código y su esquema está marcado histórico/no autoritativo; consulta los encabezados de la hoja viva antes de basar operaciones en un esquema.
-- El árbol local y `origin/main` no necesariamente representan lo desplegado. El usuario pidió trabajar directamente en Producción y pausar GitHub; su instrucción del 2026-09-30 autoriza una rama, commits y push exclusivamente para esta adopción documental. No incluyas cambios funcionales preexistentes, no mergees ni despliegues. Para cualquier otro trabajo, no crees commits, ramas remotas, PR ni pushes sin una nueva instrucción explícita. No despliegues cambios documentales.
+- El árbol local y `origin/main` no necesariamente representan lo desplegado. La excepción del 2026-09-30 para rama, commits y push correspondió a la adopción documental de v1.0; la excepción funcional del 2026-10-02 se limita al desglose de respuestas (DEC-012). No incluyas cambios funcionales preexistentes en una entrega documental. Para cualquier otro trabajo, incluidos commits o push de la adopción ARC v1.3.2, no crees commits, ramas remotas, PR ni pushes sin una instrucción explícita que los autorice. No despliegues cambios documentales.
 - El acceso estudiantil por ID se conserva temporalmente por instrucción del usuario. No lo cambies como parte de otra tarea; registra el riesgo y espera una solicitud específica para cambiar esa decisión.
 - Toda acción iniciada por el usuario que consulte o escriba Apps Script, Google Sheets, Gemini u otro servicio remoto debe seguir la regla `ProgressOverlay` al inicio de este archivo. El autoguardado de exámenes conserva su estado visible en línea y el envío mantiene su pantalla de evaluación.
 - Mantén secretos en variables sensibles de Vercel o Script Properties de Apps Script. No copies filas de alumnos, calificaciones, credenciales ni tokens a documentación, logs o fixtures.
 
 ## Comandos y operaciones
 
-En `origin/main`, `package.json` declara `npm run dev`, `npm run build`, `npm run start` y `npm run lint`. El checkout sucio revisado añade `npm run test:academic` y `tests/`, pero esos archivos no forman parte de la rama de adopción documental. Ejecuta sólo las comprobaciones pertinentes al cambio e informa cuáles no corriste. Un build no demuestra persistencia ni recorrido de usuario.
+`package.json` declara `npm run dev`, `npm run build`, `npm run start`, `npm run lint` y pruebas focales como `npm run test:academic` y `npm run test:exam-attempt`. Verifica los scripts vigentes antes de ejecutarlos y elige sólo las comprobaciones pertinentes. Un build no demuestra persistencia ni recorrido de usuario.
 
 El puente de Apps Script está en `integrations/google-sheets-bridge/`. `clasp deployments` consulta sus despliegues; `clasp push`, `clasp version` y `clasp deploy -i <deployment-existente> -V <version>` escriben en el proyecto o deployment remoto. Antes de usarlos, compara el archivo local con el origen vivo y confirma que la tarea autoriza ese cambio. Actualiza el deployment existente; no crees otra URL por accidente.
 

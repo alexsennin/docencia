@@ -7,11 +7,12 @@ import { TeacherAcademicModule } from "./teacher-academic-module";
 import { TeacherCaRubric } from "./teacher-ca-rubric";
 import { TeacherExamAuthoring } from "./teacher-exam-authoring";
 import { TeacherExamGradeMatrix } from "./teacher-exam-grade-matrix";
+import { TeacherStudentManagement } from "./teacher-student-management";
 import { ProgressOverlay } from "./progress-overlay";
 
 type Group = "Todos" | "1° A" | "1° B" | "2° A" | "2° B" | "3° A" | "3° B";
 type Status = "Todos" | "Definitiva" | "Provisional";
-type SectionId = "dashboard" | "clases" | "archivados" | "calificaciones" | "rubrica-ca" | "examenes" | "matriz-examenes";
+type SectionId = "dashboard" | "clases" | "alumnos" | "archivados" | "calificaciones" | "rubrica-ca" | "examenes" | "matriz-examenes";
 type ExamView = "constructor" | "revocador";
 type ExamReport = { attemptId: string; studentId: string; studentName: string; grade: string; group: string; examId: string; examName: string; partialId: string; status: string; score: number | null; grade10: number | null; automaticScore: number | null; aiPending: boolean; submittedAt: string; answers: Array<{ questionId: string; answer: string; score: number | null; feedback: string; status: string }> };
 type PartialOption = { id: string; name: string };
@@ -20,6 +21,7 @@ const groups: Exclude<Group, "Todos">[] = ["1° A", "1° B", "2° A", "2° B", "
 const sections: Array<{ id: SectionId; label: string; icon: string; description: string }> = [
   { id: "dashboard", label: "Dashboard", icon: "⌂", description: "Pendientes de revisión y promedio del parcial por grupo." },
   { id: "clases", label: "Clases", icon: "◫", description: "Administra sesiones, asistencia, conducta y actividades." },
+  { id: "alumnos", label: "Alumnos", icon: "♙", description: "Gestiona el padrón, los grados, los grupos y las cargas desde Excel." },
   { id: "rubrica-ca", label: "Conducta y Act.", icon: "▧", description: "Genera y revisa la rúbrica de conducta y actitud de cada alumno." },
   { id: "calificaciones", label: "Calificaciones", icon: "▦", description: "Consulta el promedio del parcial y el detalle académico de cada alumno." },
   { id: "matriz-examenes", label: "Exámenes", icon: "▤", description: "Consulta las calificaciones registradas por alumno y pregunta." },
@@ -199,6 +201,10 @@ export default function Home() {
 
         {(visitedSections.has("dashboard") || visitedSections.has("clases") || visitedSections.has("archivados") || visitedSections.has("calificaciones")) && <section className="dashboard-section" id="seccion-academica" aria-label={activeSection === "clases" ? "Clases" : activeSection === "archivados" ? "Archivados" : activeSection === "calificaciones" ? "Calificaciones" : "Dashboard"} hidden={activeSection !== "dashboard" && activeSection !== "clases" && activeSection !== "archivados" && activeSection !== "calificaciones"}>
           <TeacherAcademicModule active mode={activeSection === "clases" ? "clases" : activeSection === "archivados" ? "archivados" : activeSection === "calificaciones" ? "calificaciones" : "dashboard"} partialId={selectedPartialId} onPartialChange={setSelectedPartialId} onPartialsChange={setAcademicPartials} />
+        </section>}
+
+        {visitedSections.has("alumnos") && <section className="dashboard-section" id="seccion-alumnos" aria-label="Gestión de alumnos" hidden={activeSection !== "alumnos"}>
+          <TeacherStudentManagement active={activeSection === "alumnos"} />
         </section>}
 
         {visitedSections.has("rubrica-ca") && <section className="dashboard-section" id="seccion-rubrica-ca" aria-label="Conducta y Act." hidden={activeSection !== "rubrica-ca"}>

@@ -6,6 +6,7 @@ Descripción estática de las estructuras visuales principales del checkout. Los
 | --- | --- | --- |
 | Entrada `/` | El servidor muestra `TeacherDashboard` si hay sesión docente válida; si no, `StudentExamPortal`. | `/alumno` y `/docente/ingresar` redirigen a `/`; `/docente/probar` requiere sesión docente. Fuente: [`app/page.tsx`](../../app/page.tsx). |
 | Panel docente | Navegación lateral y área de trabajo central sobre fondo claro. | El ancho de trabajo llega a 1270 px; a 650 px o menos la navegación pasa a una franja horizontal desplazable. |
+| Padrón de alumnos | Selector de grupo y, después de elegirlo, herramientas de búsqueda e inclusión de inactivos más una tabla paginada. | Antes de seleccionar un grupo no se muestra ninguna fila de alumnos; la tabla contiene sólo el grupo activo elegido. |
 | Portal alumno | Tarjeta centrada; la tarjeta de entrada tiene máximo de 520 px y la de contenido, 940 px. | Formularios, acceso, resultados y lista de exámenes reacomodan controles en pantallas estrechas. |
 | Examen | Barra superior con temporizador y contenido centrado, con máximo de 920 px. | Las tarjetas de reactivos se apilan; las acciones se expanden al ancho disponible en móvil. |
 | Captura académica | Tabla de sesión con encabezados y alumnos; paneles de detalle, listas y formularios. La matriz de exámenes usa una fila por alumno: estado/acciones, calificación total y columnas compactas por reactivo. | Tabla, matriz y paneles con contenido extenso mantienen desplazamiento; varios contenedores tienen altura máxima con overflow. |

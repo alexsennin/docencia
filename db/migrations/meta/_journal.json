@@ -57,6 +57,13 @@
       "when": 1791169335028,
       "tag": "0007_lucky_maestro",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791297564376,
+      "tag": "0008_striped_toad",
+      "breakpoints": true
     }
   ]
 }
