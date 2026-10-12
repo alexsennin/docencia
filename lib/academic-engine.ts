@@ -54,7 +54,19 @@ function eligibleExam(exam: AcademicRow, student: AcademicRow, partialId: string
     && value(assignment, "estado").toLowerCase() === "activo");
   const groupMatch = value(exam, "grado") === value(student, "grado")
     && (value(exam, "grupo").toUpperCase() === "TODOS" || value(exam, "grupo") === value(student, "grupo"));
-  return explicit || groupMatch;
+  return value(exam, "modo_asignacion") === "Explicit" ? explicit : explicit || groupMatch;
+}
+
+export function effectiveAssessmentScore(exam: AcademicRow, attempts: AcademicRow[], studentId: string): number | null {
+  const related = attempts.filter((attempt) => value(attempt, "examen_id") === value(exam, "examen_id") && sameId(attempt.alumno_id, studentId));
+  const attempt = related.find((item) => value(item, "estado") === "Definitivo")
+    ?? related.find((item) => value(item, "estado") === "Provisional");
+  const manualGrade = truthy(attempt?.calificacion_manual_bloqueada) ? num(attempt?.calificacion_manual_10) : null;
+  if (manualGrade !== null) return Math.max(0, Math.min(100, manualGrade * 10));
+  if (!attempt || value(attempt, "estado") !== "Definitivo" || truthy(attempt.ai_pendiente)) return null;
+  const score = num(attempt.puntaje_total);
+  const maximum = num(exam.puntaje_maximo) ?? 100;
+  return score === null || maximum <= 0 ? null : Math.max(0, Math.min(100, score / maximum * 100));
 }
 
 export function calculateStudentPartial(snapshot: AcademicSnapshot, student: AcademicRow, partial: AcademicRow, now = new Date()): StudentPartialGrade {
@@ -86,6 +98,21 @@ export function calculateStudentPartial(snapshot: AcademicSnapshot, student: Aca
     // due-date behavior; new bank tasks are handled above.
     if (!bankState && (!due || due > today)) continue;
     if (!bankState && !due) continue;
+    const assessmentExamId = value(task, "evaluacion_examen_id");
+    if (assessmentExamId) {
+      const assessment = snapshot.exams.find((exam) => value(exam, "examen_id") === assessmentExamId);
+      if (!assessment || value(assessment, "proposito") !== "Actividad"
+        || !eligibleExam(assessment, student, partialId, snapshot.assignments)) continue;
+      const linkedScore = effectiveAssessmentScore(assessment, snapshot.attempts, studentId);
+      if (linkedScore === null) {
+        pendingActivity = true;
+        ecItems.push({ taskId: value(task, "tarea_id"), name: value(task, "nombre"), state: "Pendiente de evaluación", score: null, weight: num(task.peso_ec) });
+      } else {
+        included.push({ score: linkedScore, weight: num(task.peso_ec) });
+        ecItems.push({ taskId: value(task, "tarea_id"), name: value(task, "nombre"), state: "Calificada", score: linkedScore, weight: num(task.peso_ec) });
+      }
+      continue;
+    }
     const record = snapshot.taskScores.find((item) => value(item, "tarea_id") === value(task, "tarea_id") && sameId(item.alumno_id, studentId));
     const state = value(record ?? {}, "estado");
     if (state === "Excluida" || state === "Justificada" || state === "Anulada") continue;
@@ -146,26 +173,20 @@ export function calculateStudentPartial(snapshot: AcademicSnapshot, student: Aca
       // CALIFICACIONES is a derived snapshot. When no session or rubric evidence
       // exists, the product rule is a full C.A. score rather than a stale copied value.
       : 100;
-  const eligible = snapshot.exams.filter((exam) => eligibleExam(exam, student, partialId, snapshot.assignments));
+  const eligible = snapshot.exams.filter((exam) => value(exam, "proposito") !== "Actividad"
+    && eligibleExam(exam, student, partialId, snapshot.assignments));
   const examScores: number[] = [];
   let examPending = false;
   for (const exam of eligible) {
-    const attempts = snapshot.attempts.filter((attempt) => value(attempt, "examen_id") === value(exam, "examen_id") && sameId(attempt.alumno_id, studentId));
-    const attempt = attempts.find((item) => value(item, "estado") === "Definitivo") ?? attempts.find((item) => value(item, "estado") === "Provisional");
-    const manualGrade = truthy(attempt?.calificacion_manual_bloqueada) ? num(attempt?.calificacion_manual_10) : null;
-    if (manualGrade !== null) {
-      examScores.push(Math.max(0, Math.min(100, manualGrade * 10)));
-      continue;
-    }
-    if (!attempt || value(attempt, "estado") !== "Definitivo" || truthy(attempt.ai_pendiente)) { examPending = true; continue; }
-    const score = num(attempt.puntaje_total);
-    const maximum = num(exam.puntaje_maximo) ?? 100;
-    if (score === null || maximum <= 0) { examPending = true; continue; }
-    examScores.push(Math.max(0, Math.min(100, score / maximum * 100)));
+    const score = effectiveAssessmentScore(exam, snapshot.attempts, studentId);
+    if (score === null) { examPending = true; continue; }
+    examScores.push(score);
   }
+  const legacySnapshotFallback = eligible.length > 0 && eligible.every((exam) => value(exam, "modo_asignacion") !== "Explicit")
+    && eligible.every((exam) => !snapshot.attempts.some((attempt) => value(attempt, "examen_id") === value(exam, "examen_id") && sameId(attempt.alumno_id, studentId)));
   const ex = eligible.length && !examPending && examScores.length === eligible.length
     ? examScores.reduce((sum, score) => sum + score, 0) / examScores.length
-    : num(caRow?.examen);
+    : legacySnapshotFallback ? num(caRow?.examen) : eligible.length ? null : num(caRow?.examen);
   const final100 = ca !== null && ec !== null && ex !== null ? ca * 0.1 + ec * 0.4 + ex * 0.5 : null;
   return {
     partialId, studentId, group, days: sessions.length, absences, missingTasks, ca, ec, ecMode: mode,

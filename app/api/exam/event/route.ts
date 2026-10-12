@@ -1,11 +1,15 @@
 import { getDataBackend } from "../../../../lib/data-backend";
 import { ExamWorkflowError, recordExamEventInPostgres } from "../../../../lib/exam-attempt-postgres";
 import { hasSheetsBridge, sheetsBridge } from "../../../../lib/sheets-bridge";
+import { requireStudentId } from "../../../../lib/student-session";
 
 export async function POST(request: Request) {
   try {
     const payload = await request.json() as Record<string, unknown>;
-    if (getDataBackend() === "postgres") return Response.json(await recordExamEventInPostgres(payload as Parameters<typeof recordExamEventInPostgres>[0]));
+    if (getDataBackend() === "postgres") {
+      if (!(await requireStudentId(payload.studentId))) return Response.json({ error: "Inicia sesión como alumno." }, { status: 401 });
+      return Response.json(await recordExamEventInPostgres(payload as Parameters<typeof recordExamEventInPostgres>[0]));
+    }
     if (hasSheetsBridge()) await sheetsBridge("examEvent", payload);
     return Response.json({ ok: true });
   } catch (error) {

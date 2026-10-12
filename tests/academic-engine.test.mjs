@@ -147,3 +147,22 @@ test("CA promedia conducta y actitud por sesión y usa 10 si no hay captura de s
 test("la fecha actual se determina en America/Mexico_City", () => {
   assert.equal(mexicoToday(new Date("2026-09-23T05:00:00Z")), "2026-09-22");
 });
+
+test("trabajo en modalidad examen alimenta EC una sola vez y nunca EX", () => {
+  const work = { examen_id: "work-1", parcial_id: "p1", estado: "Publicado", grado: "1°", grupo: "A", proposito: "Actividad", modo_asignacion: "Explicit", puntaje_maximo: 100 };
+  const snapshot = {
+    ...base,
+    tasks: [{ tarea_id: "linked", parcial_id: "p1", grupo: "1° A", nombre: "Trabajo", estado_banco: "En_calificacion", puntaje_maximo: 10, obligatoria: "TRUE", activa: "TRUE", evaluacion_examen_id: "work-1" }],
+    taskScores: [], exams: [...base.exams, work],
+    attempts: [...base.attempts, { examen_id: "work-1", alumno_id: "A1", estado: "Definitivo", ai_pendiente: false, puntaje_total: 0 }],
+    assignments: [{ examen_id: "work-1", alumno_id: "A1", estado: "Activo" }],
+  };
+  const grade = calculateStudentPartial(snapshot, student, partial, now);
+  assert.equal(grade.ec, 0);
+  assert.equal(grade.ex, 100);
+  assert.equal(grade.missingTasks, 0);
+  assert.equal(grade.ecDetails[0].state, "Calificada");
+  const pending = calculateStudentPartial({ ...snapshot, attempts: base.attempts }, student, partial, now);
+  assert.equal(pending.ec, null);
+  assert.equal(pending.ex, 100);
+});

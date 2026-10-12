@@ -1,5 +1,14 @@
 # Trabajo pendiente verificable
 
+## Evaluaciones reutilizables y trabajos en modalidad examen (2026-10-12)
+
+- **Implementado y publicado en el deployment anterior:** repositorios Examen/Actividad, aprobación y versiones, asignación explícita idempotente, trabajo vinculado a sesión/EC, examen en EX, acceso estudiantil por ID con sesión ligada, tiempo estricto/libre, bloqueo opcional, cierre recuperable y matriz separada. La migración `0009` está en Neon Production.
+- **Corrección local en curso:** permitir guardar un borrador aunque tenga claves/rúbricas pendientes; exigir validez completa al aprobar; reabrir versiones guardadas; mostrar plantillas y actividades en Espacio de Pruebas y evaluar sin crear intentos. Test sintético directo y HTTP local pasan. El constructor usa aún un JSON editable y requiere dos documentos Word para generar el contenido.
+- **Publicado en Producción:** migración `0009` ensayada en rama Neon y aplicada de forma transaccional; rama de respaldo conservada; huellas y conteos de siete tablas operativas iguales antes y después; `CRON_SECRET` sensible configurado; Vercel `dpl_GnLvUjmAqT7R2cRyS4s3b4yKc9x2` READY, dominio 200, APIs docente/cron 401 sin autorización y cron registrado a las `0 6 * * *`. No hubo commit ni push. El cron diario no garantiza cierre inmediato si el alumno no vuelve y la docente no usa `Cerrar intentos vencidos`.
+- **Pendiente de esta corrección:** terminar pruebas y recorrido UI local de Generar → Guardar borrador → Abrir/Probar → Aprobar; actualizar fechas/estado de DEC-017 y arquitectura. Luego publicar en Vercel Production según instrucción permanente, comprobar deployment READY y rutas. No escribir en registros escolares reales durante la aceptación.
+- **Pendiente de verificación productiva de la característica anterior:** recorrido autenticado docente/alumno con registros sintéticos y ejecución real del cron; se omitieron para no escribir datos en Producción durante esa publicación. GitHub continúa sin esta entrega hasta autorización específica.
+- **Pendiente de aceptación funcional:** docente genera, revisa, aprueba y asigna Examen/Actividad; alumno ve ambos repositorios, responde con bloqueo opcional y recupera resultado; docente comprueba nota en EC/EX y revocación sin usar calificaciones reales.
+
 ## Estado vigente al 2026-10-06
 
 La opción de fijar la calificación final manual y excluir ese intento de reevaluaciones está implementada, probada con fixtures sintéticos en Docker, publicada en Vercel Production y sincronizada a GitHub `main`. El diálogo permite además editar puntos de todos los reactivos sin respuesta; el servidor conserva respuesta vacía/estado no respondido y no crea trabajos de IA. `dpl_CHsvJha7S3N8ddpQyL4bVpuqLQwQ` quedó READY; el diálogo productivo para un intento sin respuestas mostró los campos habilitados y se cerró sin guardar. Commit funcional: `6894b05`. No se sincronizaron datos escolares.

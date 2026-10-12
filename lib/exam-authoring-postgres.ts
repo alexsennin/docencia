@@ -208,25 +208,25 @@ export async function buildExamDraftInPostgres(input: {
   };
 }
 
-function validateDraft(draftValue: unknown) {
+export function validateDraft(draftValue: unknown, requirePartial = true, allowIncomplete = false) {
   if (!draftValue || typeof draftValue !== "object") throw new ExamAuthoringError("El borrador no tiene datos válidos.");
   const draft = draftValue as Partial<Draft>;
   const questions = Array.isArray(draft.questions) ? draft.questions : [];
-  if (!draft.partialId || !questions.length || questions.length > MAX_QUESTIONS) throw new ExamAuthoringError("El borrador no tiene parcial o reactivos válidos.");
+  if ((requirePartial && !draft.partialId) || !questions.length || questions.length > MAX_QUESTIONS) throw new ExamAuthoringError("El borrador no tiene parcial o reactivos válidos.");
   const grade = String(draft.grade ?? "");
   const group = String(draft.group || "TODOS");
   if (!GRADES.has(grade) || !GROUPS.has(group)) throw new ExamAuthoringError("Revisa el grado y grupo del borrador.");
   const total = questions.reduce((sum, item) => sum + Number(item.maxScore || 0), 0);
-  if (Math.abs(total - 100) > 0.01) throw new ExamAuthoringError("La suma de los puntos debe ser exactamente 100.");
+  if (!allowIncomplete && Math.abs(total - 100) > 0.01) throw new ExamAuthoringError("La suma de los puntos debe ser exactamente 100.");
   const normalizedQuestions = questions.map((item, index) => {
     if (!String(item.prompt || "").trim() || !Number.isFinite(Number(item.maxScore)) || Number(item.maxScore) <= 0) throw new ExamAuthoringError(`Revisa consigna y puntaje del reactivo ${index + 1}.`);
     const options = Array.isArray(item.options) ? item.options.map(optionLabel) : [];
     if (!["opcion_multiple", "clasificacion", "abierta"].includes(item.type)) throw new ExamAuthoringError(`Selecciona un tipo válido para el reactivo ${index + 1}.`);
-    if (item.type === "abierta" && (!item.rubric || !Array.isArray(item.rubric.criteria) || !item.rubric.criteria.length)) throw new ExamAuthoringError("Agrega una rúbrica a cada pregunta abierta antes de guardar.");
+    if (!allowIncomplete && item.type === "abierta" && (!item.rubric || !Array.isArray(item.rubric.criteria) || !item.rubric.criteria.length)) throw new ExamAuthoringError("Agrega una rúbrica a cada pregunta abierta antes de aprobar.");
     if (item.type !== "abierta" && (options.length < 2 || options.some((option) => !option))) throw new ExamAuthoringError("Agrega opciones completas a cada reactivo cerrado.");
     const answer = canonicalAnswer(item.correctAnswer, options) as string | string[] | null;
-    if (item.type !== "abierta" && !validAnswer(answer, options, item.type)) throw new ExamAuthoringError(`La clave del reactivo ${index + 1} debe coincidir con sus opciones A, B, C…${item.type === "clasificacion" ? "; en clasificación captura una clave por elemento" : ""}.`);
-    return { ...item, order: index + 1, options, correctAnswer: answer, evaluationMethod: item.type === "abierta" ? "ai" : "automatic" };
+    if (!allowIncomplete && item.type !== "abierta" && !validAnswer(answer, options, item.type)) throw new ExamAuthoringError(`La clave del reactivo ${index + 1} debe coincidir con sus opciones A, B, C…${item.type === "clasificacion" ? "; en clasificación captura una clave por elemento" : ""}.`);
+    return { ...item, order: index + 1, options, correctAnswer: allowIncomplete && item.type !== "abierta" && !validAnswer(answer, options, item.type) ? null : answer, evaluationMethod: item.type === "abierta" ? "ai" : "automatic" };
   });
   return { ...draft, questions: normalizedQuestions, grade, group, name: String(draft.name || "Examen de Español").slice(0, 150) } as Draft;
 }

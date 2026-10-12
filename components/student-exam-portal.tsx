@@ -72,7 +72,7 @@ export default function StudentExamPortal() {
     if (remoteActionInFlight.current) return;
     remoteActionInFlight.current = true;
     setMessage("");
-    setBusyMessage("Preparando el examen...");
+    setBusyMessage(selectedExam.purpose === "Actividad" ? "Preparando el trabajo…" : "Preparando el examen…");
     try {
       const data = await api("/api/exam/start", { studentId, examId: selectedExam.id });
       if (data.completed && data.result) {
@@ -86,8 +86,8 @@ export default function StudentExamPortal() {
       const savedAnswers = data.answers || {};
       timedOutSubmitRef.current = false;
       answersRef.current = savedAnswers;
-      setExam(data.exam); setAttemptId(data.attemptId); setStartedAt(data.startedAt); setDeadlineAt(data.deadlineAt); setAnswers(savedAnswers); setSaveState("idle"); setLocked(Boolean(data.locked)); setPhase("exam");
-      document.documentElement.requestFullscreen?.().catch(() => undefined);
+      setExam(data.exam); setAttemptId(data.attemptId); setStartedAt(data.startedAt); setDeadlineAt(data.deadlineAt || ""); setAnswers(savedAnswers); setSaveState("idle"); setLocked(Boolean(data.locked)); setPhase("exam");
+      if (data.exam.lockOnFocusLoss !== false) document.documentElement.requestFullscreen?.().catch(() => undefined);
     } catch (error) { setMessage(error instanceof Error ? error.message : "No se pudo iniciar el examen."); }
     finally { remoteActionInFlight.current = false; setBusyMessage(""); }
   };
@@ -104,7 +104,7 @@ export default function StudentExamPortal() {
       setResult(data.result); setPhase("result"); document.exitFullscreen?.().catch(() => undefined);
     } catch (error) {
       const failure = error instanceof Error ? error.message : "No se pudo enviar el examen.";
-      if (/el tiempo del examen terminó/i.test(failure)) {
+      if (/tiempo (?:del examen|de la evaluación) terminó/i.test(failure)) {
         try {
           const recovery = await api("/api/exam/start", { studentId: student.id, examId: exam.id });
           if (recovery.submissionPending) {
@@ -118,17 +118,21 @@ export default function StudentExamPortal() {
   }, [api, answers, attemptId, exam, startedAt, student]);
 
   useEffect(() => {
-    if (phase !== "exam" || !deadlineAt || locked) return;
+    if (phase !== "exam" || !startedAt) return;
     const update = () => {
+      if (!deadlineAt) {
+        setTimeLeft(Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000)));
+        return;
+      }
       const left = Math.max(0, Math.ceil((new Date(deadlineAt).getTime() - Date.now()) / 1000));
       setTimeLeft(left);
       if (left === 0 && !timedOutSubmitRef.current) { timedOutSubmitRef.current = true; void submitExam("tiempo_agotado"); }
     };
     update(); const timer = window.setInterval(update, 1000); return () => window.clearInterval(timer);
-  }, [deadlineAt, locked, phase, submitExam]);
+  }, [deadlineAt, phase, startedAt, submitExam]);
 
   useEffect(() => {
-    if (phase !== "exam") return;
+    if (phase !== "exam" || exam?.lockOnFocusLoss === false) return;
     const reportFocusLoss = (reason: string) => {
       if (submissionRef.current || locked || focusGuardSuppressedRef.current) return;
       setLocked(true); setMessage("El examen se bloqueó porque la ventana perdió el foco. Solicita el desbloqueo al docente.");
@@ -148,7 +152,7 @@ export default function StudentExamPortal() {
     const preventShortcuts = (event: KeyboardEvent) => { if ((event.ctrlKey || event.metaKey) && ["c", "x", "v", "a", "p", "s"].includes(event.key.toLowerCase())) event.preventDefault(); };
     window.addEventListener("blur", onBlur); window.addEventListener("focus", onFocus); document.addEventListener("visibilitychange", onVisibility); document.addEventListener("fullscreenchange", onFullscreen); document.addEventListener("copy", preventClipboard); document.addEventListener("cut", preventClipboard); document.addEventListener("paste", preventClipboard); document.addEventListener("contextmenu", preventContext); document.addEventListener("keydown", preventShortcuts);
     return () => { window.removeEventListener("blur", onBlur); window.removeEventListener("focus", onFocus); document.removeEventListener("visibilitychange", onVisibility); document.removeEventListener("fullscreenchange", onFullscreen); document.removeEventListener("copy", preventClipboard); document.removeEventListener("cut", preventClipboard); document.removeEventListener("paste", preventClipboard); document.removeEventListener("contextmenu", preventContext); document.removeEventListener("keydown", preventShortcuts); };
-  }, [api, attemptId, exam?.id, locked, phase, studentId]);
+  }, [api, attemptId, exam?.id, exam?.lockOnFocusLoss, locked, phase, studentId]);
 
   const setAnswer = (questionId: string, value: string | string[]) => {
     const nextAnswers = { ...answersRef.current, [questionId]: value };
@@ -182,7 +186,7 @@ export default function StudentExamPortal() {
         focusGuardTimeoutRef.current = null;
       }, 30_000);
       if (typeof data.deadlineAt === "string") setDeadlineAt(data.deadlineAt);
-      setLocked(false); setUnlockPassword(""); setMessage("Examen desbloqueado. El cronómetro se reanuda con el tiempo que quedaba antes del bloqueo.");
+      setLocked(false); setUnlockPassword(""); setMessage(exam?.policyVersion === "v1" ? "Evaluación desbloqueada. El límite de tiempo sigue corriendo." : "Examen desbloqueado. El cronómetro se reanuda con el tiempo que quedaba antes del bloqueo.");
     } catch (error) { setMessage(error instanceof Error ? error.message : "No se pudo desbloquear."); }
     finally { remoteActionInFlight.current = false; setBusyMessage(""); }
   };
@@ -206,13 +210,45 @@ export default function StudentExamPortal() {
     setPhase("selection");
   };
 
-  if (phase === "login") return <main className="student-shell"><section className="student-card login-card"><p className="eyebrow">INSTITUTO SANTA MARÍA · ESPAÑOL</p><h1>Bienvenido a Docencia</h1><p className="student-lead">Escribe tu ID escolar para ver tus exámenes. Si eres docente, ingresa tu contraseña en el mismo campo.</p><form onSubmit={lookup} className="student-form"><label>ID escolar o contraseña docente<input type="text" value={studentId} onChange={(event) => setStudentId(event.target.value)} autoFocus autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="ID o contraseña" /></label><button className="primary-button" type="submit" disabled={!!busyMessage}>{busyMessage ? "Accediendo…" : "Ingresar"}</button></form>{message && <p className="notice" role="alert">{message}</p>}</section>{busyMessage && <ProgressOverlay title="Accediendo…" detail="Validamos el acceso y consultamos los exámenes asignados." />}</main>;
+  const logout = async () => {
+    if (remoteActionInFlight.current) return;
+    remoteActionInFlight.current = true;
+    setBusyMessage("Cerrando tu sesión…");
+    try {
+      await api("/api/student/logout", {});
+      setPhase("login"); setStudent(null); setStudentId(""); setAcademic(null); setExams([]);
+    } catch (cause) { setMessage(cause instanceof Error ? cause.message : "No se pudo cerrar la sesión."); }
+    finally { remoteActionInFlight.current = false; setBusyMessage(""); }
+  };
 
-  if (phase === "selection") return <main className="student-shell"><section className="student-card selection-card"><div className="student-header"><div><p className="eyebrow">ALUMNO VALIDADO</p><h1>{student?.name}</h1><p>{student?.grade} · Grupo {student?.group}</p></div><button className="text-button" disabled={!!busyMessage} onClick={() => { setPhase("login"); setStudent(null); setStudentId(""); setAcademic(null); }}>Salir</button></div>
+  const renderChoices = (kind: "Examen" | "Actividad") => {
+    const choices = exams.filter((item) => (item.purpose === "Actividad" ? "Actividad" : "Examen") === kind);
+    return <section className="student-assessment-list"><h2>{kind === "Actividad" ? "Trabajos asignados" : "Exámenes asignados"}</h2>
+      {choices.length === 0 ? <p className="notice">No tienes {kind === "Actividad" ? "trabajos" : "exámenes"} asignados.</p>
+        : <div className="exam-list">{choices.map((item) => {
+          const resumable = item.attemptStatus === "Activo" || item.attemptStatus === "Bloqueado";
+          const pendingResult = item.attemptStatus === "Evaluando";
+          const completed = !!item.attemptStatus && item.attemptStatus !== "Disponible" && !resumable && !pendingResult;
+          return <article className="exam-choice" key={item.id}><div>
+            <span className="exam-kicker">{item.partialId || "PARCIAL"} · {item.timeMode === "Libre" ? "TIEMPO LIBRE" : `${item.durationMinutes} MINUTOS`}</span>
+            <h3>{item.name}</h3><p>{item.questions.length} reactivos · Calificación máxima 100</p>
+            {completed && <p className="notice">Evaluación presentada. Puedes consultar el resultado.</p>}
+            {resumable && <p className="notice">Tienes un intento en curso. Tus respuestas guardadas se conservan.</p>}
+            {pendingResult && <p className="notice">El envío quedó registrado. Puedes recuperar el resultado.</p>}
+          </div><button className="primary-button" onClick={() => void startExam(item)} disabled={!!busyMessage}>
+            {busyMessage ? "Preparando…" : pendingResult ? "Recuperar resultado" : completed ? "Ver resultado" : resumable ? "Continuar" : kind === "Actividad" ? "Iniciar trabajo" : "Iniciar examen"}
+          </button></article>;
+        })}</div>}
+    </section>;
+  };
+
+  if (phase === "login") return <main className="student-shell"><section className="student-card login-card"><p className="eyebrow">INSTITUTO SANTA MARÍA · ESPAÑOL</p><h1>Bienvenido a Docencia</h1><p className="student-lead">Escribe tu ID escolar para ver tus exámenes y trabajos. Si eres docente, ingresa tu contraseña en el mismo campo.</p><form onSubmit={lookup} className="student-form"><label>ID escolar o contraseña docente<input type="text" value={studentId} onChange={(event) => setStudentId(event.target.value)} autoFocus autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="ID o contraseña" /></label><button className="primary-button" type="submit" disabled={!!busyMessage}>{busyMessage ? "Accediendo…" : "Ingresar"}</button></form>{message && <p className="notice" role="alert">{message}</p>}</section>{busyMessage && <ProgressOverlay title={busyMessage} detail={busyMessage.startsWith("Consultando") ? "Cargamos tus calificaciones, exámenes y trabajos asignados." : "Validamos el ID y consultamos las evaluaciones disponibles."} />}</main>;
+
+  if (phase === "selection") return <main className="student-shell"><section className="student-card selection-card"><div className="student-header"><div><p className="eyebrow">ALUMNO VALIDADO</p><h1>{student?.name}</h1><p>{student?.grade} · Grupo {student?.group}</p></div><button className="text-button" disabled={!!busyMessage} onClick={() => void logout()}>Salir</button></div>
     <section className="student-academic"><h2>Mi avance académico</h2>{academicLoading && <p className="notice">Consultando calificaciones…</p>}{academicError && <p className="notice" role="alert">{academicError}</p>}{academic?.matrix.map((item) => <article className="student-partial-card" key={item.partialId}><div className="student-partial-heading"><strong>{item.partialName}</strong><b>{item.final10 === null ? "Calificación final pendiente" : `${item.final10.toFixed(1)} / 10`}</b></div><div className="student-grade-grid"><span>Días <b>{item.days}</b></span><span>Faltas <b>{item.absences}</b></span><span>Tareas faltantes <b>{item.missingTasks}</b></span><span>CA <b>{item.ca === null ? "Pendiente" : item.ca.toFixed(1)}</b></span><span>EC <b>{item.ec === null ? "Pendiente" : item.ec.toFixed(1)}</b></span><span>EX <b>{item.ex === null ? "Pendiente" : item.ex.toFixed(1)}</b></span></div>{item.ecDetails.some((task) => task.state.startsWith("Faltante")) && <div className="student-missing-tasks"><strong>Actividades que faltan</strong>{item.ecDetails.filter((task) => task.state.startsWith("Faltante")).map((task) => <span key={task.taskId}>{task.name} · {task.state}</span>)}</div>}{academic.conduct?.filter((note) => note.parcial_id === item.partialId && note.observacion).map((note, index) => <div className="student-teacher-note" key={`${note.fecha}-${index}`}><strong>Comentario docente · {note.tipo} ({note.fecha})</strong><span>{note.observacion}</span></div>)}</article>)}{academic?.reports?.map((report) => <article className="student-partial-card student-feedback-card" key={report.partialId}><p className="eyebrow">RETROALIMENTACIÓN · {academic.matrix.find((item) => item.partialId === report.partialId)?.partialName || report.partialId}</p><p>{report.summary}</p>{report.strengths.length > 0 && <div><strong>Fortalezas</strong><ul>{report.strengths.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul></div>}{report.opportunities.length > 0 && <div><strong>Áreas de oportunidad</strong><ul>{report.opportunities.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul></div>}{report.recommendations.length > 0 && <div><strong>Recomendaciones</strong><ul>{report.recommendations.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul></div>}</article>)}</section>
-    <h2>Exámenes asignados</h2>{exams.length === 0 ? <p className="notice">No hay exámenes publicados para tu grado, grupo y parcial.</p> : <div className="exam-list">{exams.map((item) => { const resumable = item.attemptStatus === "Activo" || item.attemptStatus === "Bloqueado"; const pendingResult = item.attemptStatus === "Evaluando"; const completed = !!item.attemptStatus && item.attemptStatus !== "Disponible" && !resumable && !pendingResult; return <article className="exam-choice" key={item.id}><div><span className="exam-kicker">{item.partialId || "PARCIAL"} · {item.durationMinutes} MINUTOS</span><h3>{item.name}</h3><p>{item.questions.length} reactivos · Calificación máxima 100</p>{completed && <p className="notice">Examen presentado. Puedes consultar el resultado.</p>}{resumable && <p className="notice">Tienes un intento en curso. Se conserva el tiempo restante.</p>}{pendingResult && <p className="notice">El envío quedó registrado. Puedes recuperar el resultado.</p>}</div><button className="primary-button" onClick={() => void startExam(item)} disabled={!!busyMessage}>{busyMessage ? "Preparando…" : pendingResult ? "Recuperar resultado" : completed ? "Ver resultado" : resumable ? "Continuar examen" : "Iniciar examen"}</button></article>; })}</div>}{message && <p className="notice">{message}</p>}</section>{busyMessage && <ProgressOverlay title={busyMessage} detail={busyMessage.startsWith("Recuperando") ? "El envío ya está guardado; recuperamos la evaluación registrada." : busyMessage.startsWith("Consultando") ? "Consultamos tu matriz, tareas pendientes y comentarios docentes." : "Abrimos el intento y preparamos las preguntas."} />}</main>;
+    {renderChoices("Examen")}{renderChoices("Actividad")}{message && <p className="notice">{message}</p>}</section>{busyMessage && <ProgressOverlay title={busyMessage} detail={busyMessage.startsWith("Cerrando") ? "Revocamos la sesión de este dispositivo." : busyMessage.startsWith("Recuperando") ? "El envío ya está guardado; recuperamos la evaluación registrada." : busyMessage.startsWith("Consultando") ? "Consultamos tu matriz, tareas pendientes y comentarios docentes." : "Abrimos el intento y preparamos las preguntas."} />}</main>;
 
-  if (phase === "grading") return <main className="student-shell"><section className="student-card grading-card"><div className="evaluating-spinner" /><p className="eyebrow">EVALUACIÓN EN CURSO</p><h1>Estamos evaluando tu examen</h1><p>Las respuestas cerradas se califican automáticamente. Las preguntas abiertas se revisan con la rúbrica y la evaluación de IA.</p><span>No cierres esta ventana.</span></section></main>;
+  if (phase === "grading") return <main className="student-shell"><section className="student-card grading-card"><div className="evaluating-spinner" /><p className="eyebrow">EVALUACIÓN EN CURSO</p><h1>Estamos evaluando tus respuestas</h1><p>Las respuestas cerradas se califican automáticamente. Las preguntas abiertas se revisan con la rúbrica y la evaluación de IA.</p><span>No cierres esta ventana.</span></section></main>;
 
   if (phase === "result" && result) return <main className="student-shell"><section className="student-card result-card"><p className="eyebrow">RESULTADO DEL EXAMEN</p><h1>{result.totalScore === null ? "Resultado provisional" : `${result.grade10} / 10`}</h1><p className="student-lead">Puntaje automático: {result.automaticScore} / {result.maxScore}{result.aiPending ? " · Pregunta abierta pendiente de evaluación docente" : ""}</p><div className="result-items">{result.items.map((item) => <div className="result-item" key={item.questionId}><strong>Reactivo {item.order}</strong><span>{item.status === "correcta" ? "Correcta" : item.status === "incorrecta" ? "Incorrecta" : item.status === "sin_respuesta" ? "Sin respuesta" : "Pendiente de IA"}</span><b>{item.score === null ? "—" : `${item.score} / ${item.maxScore}`}</b><small>{item.feedback}</small>{item.strengths?.length ? <small><strong>Fortalezas:</strong> {item.strengths.join(" ")}</small> : null}{item.opportunities?.length ? <small><strong>Áreas de oportunidad:</strong> {item.opportunities.join(" ")}</small> : null}</div>)}</div><button className="primary-button result-link" type="button" onClick={leaveExamResult}>Salir</button></section></main>;
 
@@ -221,12 +257,12 @@ export default function StudentExamPortal() {
     <main className="exam-shell">
       <header className="exam-topbar">
         <div><span className="exam-kicker">{exam.name}</span><strong>{student?.name}</strong></div>
-        <div className={`exam-timer ${timeLeft < 300 ? "danger" : ""}`} aria-live="polite">Tiempo restante <b>{formatTime}</b></div>
+        <div className={`exam-timer ${deadlineAt && timeLeft < 300 ? "danger" : ""}`} aria-live="polite">{deadlineAt ? "Tiempo restante" : "Tiempo transcurrido"} <b>{formatTime}</b></div>
       </header>
       <section className="exam-content">
         <div className="exam-instructions">
           <strong>Instrucciones</strong><span>{exam.instructions}</span>
-          <span>Copiar, pegar, salir de la ventana y cambiar de pestaña están deshabilitados y se registran como incidentes.</span>
+          {exam.lockOnFocusLoss !== false && <span>Copiar, pegar, salir de la ventana y cambiar de pestaña están deshabilitados y se registran como incidentes.</span>}
         </div>
         {message && <p className="notice">{message}</p>}
         {locked && (
@@ -280,7 +316,7 @@ export default function StudentExamPortal() {
         </div>
         <div className="exam-actions">
           <span aria-live="polite">{saveState === "saving" ? "Guardando tus respuestas…" : saveState === "saved" ? "Respuestas guardadas" : saveState === "error" ? "Reintentaremos guardar al enviar el examen" : "Las respuestas se guardan automáticamente."}</span>
-          <button className="primary-button" onClick={() => void submitExam()} disabled={locked || isSubmitting}>Enviar examen</button>
+          <button className="primary-button" onClick={() => void submitExam()} disabled={locked || isSubmitting}>Enviar {exam.purpose === "Actividad" ? "trabajo" : "examen"}</button>
         </div>
       </section>
       {busyMessage && <ProgressOverlay title={busyMessage} detail="Validamos la autorización del docente y reanudamos tu examen." />}

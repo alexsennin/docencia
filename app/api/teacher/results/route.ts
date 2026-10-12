@@ -9,7 +9,16 @@ export async function GET(request: Request) {
   if (!(await hasTeacherSession())) return Response.json({ error: "Acceso docente requerido." }, { status: 401 });
   try {
     const backend = getDataBackend();
-    if (backend === "postgres") return Response.json(await getTeacherExamResultsInPostgres({ includeInProgress: new URL(request.url).searchParams.get("includeInProgress") === "true" }), { headers: { "Cache-Control": "no-store" } });
+    if (backend === "postgres") {
+      const params = new URL(request.url).searchParams;
+      return Response.json(await getTeacherExamResultsInPostgres({
+        includeInProgress: params.get("includeInProgress") === "true",
+        kind: params.get("kind") === "Actividad" ? "Actividad" : "Examen",
+      }), { headers: { "Cache-Control": "no-store" } });
+    }
+    if (new URL(request.url).searchParams.get("kind") === "Actividad") {
+      return Response.json({ error: "La matriz de trabajos con evaluación requiere PostgreSQL." }, { status: 503 });
+    }
     if (!hasSheetsBridge()) return Response.json({ error: "No está configurada la conexión con Google Sheets." }, { status: 503 });
     const data = await sheetsBridge<Record<string, unknown>>("listExamResults", {});
     return Response.json(data, { headers: { "Cache-Control": "no-store" } });

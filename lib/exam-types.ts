@@ -40,6 +40,10 @@ export type ExamDefinition = {
   durationMinutes: number;
   maxScore: number;
   requiresFullscreen: boolean;
+  purpose?: "Examen" | "Actividad";
+  timeMode?: "Estricto" | "Libre";
+  lockOnFocusLoss?: boolean;
+  policyVersion?: "legacy" | "v1";
   instructions: string;
   questions: ExamQuestion[];
 };

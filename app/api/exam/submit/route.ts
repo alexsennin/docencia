@@ -6,6 +6,7 @@ import { hasSheetsBridge, sheetsBridge } from "../../../../lib/sheets-bridge";
 import { calculateStudentPartial, toGradeSnapshotRow, type AcademicSnapshot } from "../../../../lib/academic-engine";
 import { refreshGradeSnapshotsInPostgres } from "../../../../lib/teacher-session-postgres";
 import type { AnswerMap, ExamResult } from "../../../../lib/exam-types";
+import { requireStudentId } from "../../../../lib/student-session";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,7 @@ export async function POST(request: Request) {
     const payload = await request.json() as { attemptId?: string; examId?: string; studentId?: string; answers?: AnswerMap; reason?: string };
     if (!payload.attemptId || !payload.examId || !payload.studentId || !payload.answers) return Response.json({ error: "No se puede enviar un intento incompleto." }, { status: 400 });
     if (getDataBackend() === "postgres") {
+      if (!(await requireStudentId(payload.studentId))) return Response.json({ error: "Inicia sesión como alumno." }, { status: 401 });
       const submitted = await submitExamAttemptInPostgres(payload);
       let academicSyncPending = false;
       try { await refreshGradeSnapshotsInPostgres(submitted.partialId); }

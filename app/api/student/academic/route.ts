@@ -2,6 +2,7 @@ import { calculateStudentPartial, type AcademicRow, type AcademicSnapshot } from
 import { hasSheetsBridge, sheetsBridge } from "../../../../lib/sheets-bridge";
 import { getDataBackend } from "../../../../lib/data-backend";
 import { getStudentAcademicInPostgres } from "../../../../lib/student-academic";
+import { requireStudentId } from "../../../../lib/student-session";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,7 @@ export async function GET(request: Request) {
   try {
     let data: StudentAcademicData;
     if (getDataBackend() === "postgres") {
+      if (!(await requireStudentId(studentId))) return Response.json({ error: "Inicia sesión como alumno." }, { status: 401 });
       data = await getStudentAcademicInPostgres(studentId) as unknown as StudentAcademicData;
     } else {
       if (!hasSheetsBridge()) return Response.json({ error: "No está configurada la conexión con Google Sheets." }, { status: 503 });

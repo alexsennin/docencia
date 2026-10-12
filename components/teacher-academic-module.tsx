@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { calculateAcademicMatrix, mexicoToday } from "../lib/academic-engine";
+import { calculateAcademicMatrix, effectiveAssessmentScore, mexicoToday } from "../lib/academic-engine";
 import { listArchivedAcademicItems } from "../lib/academic-archive";
 import { ProgressOverlay } from "./progress-overlay";
+import { TeacherAssessmentPicker } from "./teacher-assessment-picker";
 
 type Row = Record<string, string | number | boolean | null | undefined>;
 type Snapshot = { partials: Row[]; students: Row[]; sessions: Row[]; absences: Row[]; tasks: Row[]; taskScores: Row[]; conduct: Row[]; grades: Row[]; exams: Row[]; attempts: Row[]; assignments: Row[]; reports: Row[] };
@@ -102,6 +103,7 @@ export function TeacherAcademicModule({ active, mode, partialId, onPartialChange
   const [taskDraftEdits, setTaskDraftEdits] = useState<Record<string, Record<string, Partial<TaskDraft>>>>({});
   const [taskWeightEdits, setTaskWeightEdits] = useState<Record<string, string>>({});
   const [showTaskForm, setShowTaskForm] = useState<TaskKind | null>(null);
+  const [showAssessmentPicker, setShowAssessmentPicker] = useState<TaskKind | null>(null);
   const [showTaskBank, setShowTaskBank] = useState(false);
   const [showPendingExams, setShowPendingExams] = useState(false);
   const [showSessionForm, setShowSessionForm] = useState(false);
@@ -153,6 +155,11 @@ export function TeacherAcademicModule({ active, mode, partialId, onPartialChange
   const sessionTasks = useMemo(() => data?.snapshot.tasks.filter((item) => str(item, "parcial_id") === partialId && str(item, "grupo") === group && String(item.activa).toUpperCase() !== "FALSE" && (
     str(item, "sesion_calificacion_id") === sessionId || (str(item, "tipo") === "Trabajo en clase" && str(item, "sesion_id") === sessionId)
   )) ?? [], [data, partialId, group, sessionId]);
+  const linkedScore = (task: Row, studentId: string) => {
+    const examId = str(task, "evaluacion_examen_id");
+    const linkedExam = data?.snapshot.exams.find((item) => str(item, "examen_id") === examId);
+    return linkedExam ? effectiveAssessmentScore(linkedExam, data?.snapshot.attempts ?? [], studentId) : null;
+  };
   useEffect(() => {
     const previous = previousSessionTaskCount.current;
     if (previous.sessionId === sessionId && sessionTasks.length > previous.count) {
@@ -409,7 +416,7 @@ export function TeacherAcademicModule({ active, mode, partialId, onPartialChange
         const draft = studentDrafts[str(student, "id")] ?? { attendance: "P", annotation: "" };
         return { studentId: str(student, "id"), annotation: draft.annotation };
       }),
-      taskScores: sessionTasks.map((task) => ({
+      taskScores: sessionTasks.filter((task) => !str(task, "evaluacion_examen_id")).map((task) => ({
         taskId: str(task, "tarea_id"),
         entries: students.map((student) => {
           const draft = taskDrafts[`${str(task, "tarea_id")}:${str(student, "id")}`] ?? { score: "0" };
@@ -427,6 +434,14 @@ export function TeacherAcademicModule({ active, mode, partialId, onPartialChange
       setStudentDraftEdits((current) => ({ ...current, [sessionId]: {} }));
       setTaskDraftEdits((current) => ({ ...current, [sessionId]: {} }));
     }
+  }
+
+  async function refreshAfterAssessmentAssignment() {
+    const response = await fetch("/api/teacher/academic", { cache: "no-store" });
+    const body = await response.json() as ResponseData;
+    if (!response.ok) throw new Error(body.error || "El trabajo se asignó, pero no se pudo actualizar la sesión.");
+    setData(body);
+    setMessage("Trabajo con evaluación asignado. La calificación aparecerá al entregarse.");
   }
 
   async function deleteSession() {
@@ -523,6 +538,10 @@ export function TeacherAcademicModule({ active, mode, partialId, onPartialChange
               {sessionTasks.map((task) => {
                 const key = `${str(task, "tarea_id")}:${id}`;
                 const taskDraft = taskDrafts[key] ?? { score: "0" };
+                if (str(task, "evaluacion_examen_id")) {
+                  const score = linkedScore(task, id);
+                  return <td key={str(task, "tarea_id")}><div className="task-grade-cell"><span aria-label={`Nota de evaluación para ${str(student, "nombre")}`}>{score === null ? "Pendiente" : `${(score / 10).toFixed(2)} / 10`}</span></div></td>;
+                }
                 return <td key={str(task, "tarea_id")}><div className="task-grade-cell"><input aria-label={`Calificación de ${str(task, "nombre")} para ${str(student, "nombre")}, sobre 10`} type="text" inputMode="decimal" placeholder="0" value={taskDraft.score} onKeyDown={focusNextTaskGrade} onChange={(event) => updateTaskDraft(str(task, "tarea_id"), id, { score: sanitizeGradeInput(event.target.value) })} onBlur={() => updateTaskDraft(str(task, "tarea_id"), id, { score: clampGradeInput(taskDraft.score) })} /></div></td>;
               })}
             </tr>;
@@ -581,8 +600,9 @@ export function TeacherAcademicModule({ active, mode, partialId, onPartialChange
       <button className="secondary-button" type="button" onClick={() => setDetailStudentId("")}>Cerrar</button></section></div>}
 
     {mode === "clases" && showSessionForm && <div className="academic-dialog-backdrop" role="presentation"><section className="academic-dialog" role="dialog" aria-modal="true" aria-labelledby="session-form-title"><button className="dialog-close" type="button" aria-label="Cerrar" onClick={() => setShowSessionForm(false)}>×</button><p className="eyebrow">NUEVA SESIÓN · {group}</p><h3 id="session-form-title">Agregar sesión</h3><form className="academic-form" onSubmit={(event) => void createSession(event)}><label><span>Fecha de clase</span><input type="date" value={sessionDate} onChange={(event) => setSessionDate(event.target.value)} required /></label><button className="primary-button" disabled={!!busy}>Crear sesión</button></form></section></div>}
-    {mode === "clases" && showTaskForm && <div className="academic-dialog-backdrop" role="presentation"><section className="academic-dialog" role="dialog" aria-modal="true" aria-labelledby="task-form-title"><button className="dialog-close" type="button" aria-label="Cerrar" onClick={() => setShowTaskForm(null)}>×</button><p className="eyebrow">{showTaskForm === "Tarea" ? "BANCO DE TAREAS · SIN FECHA DE CALIFICACIÓN" : `TRABAJO EN CLASE · ${str(currentSession ?? {}, "fecha_clase")}`}</p><h3 id="task-form-title">{showTaskForm === "Tarea" ? "Agregar tarea" : "Agregar trabajo en clase"}</h3><form className="academic-form" onSubmit={(event) => void createTask(event)}><label><span>Nombre</span><input name="name" required maxLength={120} /></label><label><span>Descripción</span><textarea name="description" maxLength={2000} rows={3} /></label><button className="primary-button" disabled={!!busy}>Guardar</button></form></section></div>}
+    {mode === "clases" && showTaskForm && <div className="academic-dialog-backdrop" role="presentation"><section className="academic-dialog" role="dialog" aria-modal="true" aria-labelledby="task-form-title"><button className="dialog-close" type="button" aria-label="Cerrar" onClick={() => setShowTaskForm(null)}>×</button><p className="eyebrow">{showTaskForm === "Tarea" ? "BANCO DE TAREAS · SIN FECHA DE CALIFICACIÓN" : `TRABAJO EN CLASE · ${str(currentSession ?? {}, "fecha_clase")}`}</p><h3 id="task-form-title">{showTaskForm === "Tarea" ? "Agregar tarea" : "Agregar trabajo en clase"}</h3><form className="academic-form" onSubmit={(event) => void createTask(event)}><label><span>Nombre</span><input name="name" required maxLength={120} /></label><label><span>Descripción</span><textarea name="description" maxLength={2000} rows={3} /></label><div className="gemini-actions"><button className="primary-button" disabled={!!busy}>Guardar</button><button className="secondary-button" type="button" onClick={() => { setShowAssessmentPicker(showTaskForm); setShowTaskForm(null); }} disabled={!!busy}>Desde repositorio</button></div></form></section></div>}
 
+    {mode === "clases" && showAssessmentPicker && sessionId && <TeacherAssessmentPicker partialId={partialId} sessionId={sessionId} group={group} taskType={showAssessmentPicker} onClose={() => setShowAssessmentPicker(null)} onAssigned={refreshAfterAssessmentAssignment} />}
     {mode === "clases" && showTaskBank && <div className="academic-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowTaskBank(false); }}><section className="academic-dialog task-bank-dialog" role="dialog" aria-modal="true" aria-labelledby="task-bank-title"><button className="dialog-close" type="button" aria-label="Cerrar" onClick={() => setShowTaskBank(false)}>×</button><p className="eyebrow">TAREAS PENDIENTES · {group}</p><h3 id="task-bank-title">Elige las tareas que vas a calificar</h3><div className="task-bank-list">{pendingTasks.length ? pendingTasks.map((task) => { const id = str(task, "tarea_id"); const selected = selectedPendingIds.includes(id); return <div className="task-bank-option" key={id}><label className="task-bank-option-select"><input type="checkbox" checked={selected} onChange={(event) => setSelectedPendingIds((current) => event.target.checked ? [...current, id] : current.filter((item) => item !== id))} /><span><strong>{str(task, "nombre")}</strong><small>Agregada el {str(task, "fecha_asignacion") || "—"} · {str(task, "descripcion") || "Sin descripción"}</small></span></label><button type="button" className="task-delete-inline" aria-label={`Archivar tarea ${str(task, "nombre")} del banco`} onClick={() => setTaskToDelete(task)} disabled={!!busy}>Archivar</button></div>; }) : <p className="task-bank-empty">No hay tareas pendientes en el banco.</p>}</div><button className="primary-button" type="button" onClick={() => void attachPendingTasks()} disabled={!!busy || !selectedPendingIds.length}>Agregar a esta sesión</button></section></div>}
 
     {mode === "clases" && annotationStudent && <div className="academic-dialog-backdrop" role="presentation"><section className="academic-dialog" role="dialog" aria-modal="true" aria-labelledby="annotation-title"><button className="dialog-close" type="button" aria-label="Cerrar" onClick={() => setAnnotationStudentId("")}>×</button><p className="eyebrow">ANOTACIÓN · {group} · {str(currentSession ?? {}, "fecha_clase")}</p><h3 id="annotation-title">{str(annotationStudent, "nombre")}</h3><label className="annotation-editor"><span>Incidente u observación</span><textarea rows={5} maxLength={1000} value={studentDrafts[annotationStudentId]?.annotation ?? ""} onChange={(event) => updateStudent(annotationStudentId, { annotation: event.target.value })} /></label><button className="primary-button" type="button" onClick={() => setAnnotationStudentId("")}>Listo</button></section></div>}

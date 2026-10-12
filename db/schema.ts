@@ -69,6 +69,22 @@ export const studentGroups = pgTable(
   ],
 );
 
+export const studentSessions = pgTable(
+  "student_sessions",
+  {
+    id: text("sesion_id").primaryKey(),
+    studentId: text("alumno_id").notNull().references(() => students.id),
+    tokenHash: text("token_hash").notNull(),
+    createdAt: instant("created_at").notNull().defaultNow(),
+    expiresAt: instant("expires_at").notNull(),
+    revokedAt: instant("revoked_at"),
+  },
+  (table) => [
+    uniqueIndex("student_sessions_token_hash_unique").on(table.tokenHash),
+    index("student_sessions_student_idx").on(table.studentId),
+  ],
+);
+
 export const academicPeriods = pgTable(
   "academic_periods",
   {
@@ -170,8 +186,12 @@ export const tasks = pgTable(
     continuousAssessmentWeight: numeric("peso_ec"),
     bankStatus: text("estado_banco"),
     gradingSessionId: text("sesion_calificacion_id"),
+    assessmentExamId: text("evaluacion_examen_id").references(() => exams.id),
   },
-  (table) => [index("tasks_partial_group_status_idx").on(table.partialId, table.group, table.bankStatus)],
+  (table) => [
+    index("tasks_partial_group_status_idx").on(table.partialId, table.group, table.bankStatus),
+    uniqueIndex("tasks_assessment_exam_unique").on(table.assessmentExamId),
+  ],
 );
 
 export const taskGrades = pgTable(
@@ -248,6 +268,48 @@ export const conductAttitude = pgTable(
   ],
 );
 
+export const assessmentTemplates = pgTable(
+  "assessment_templates",
+  {
+    id: text("plantilla_id").primaryKey(),
+    familyId: text("familia_id").notNull(),
+    version: integer("version").notNull(),
+    kind: text("tipo").notNull(),
+    name: text("nombre").notNull(),
+    instructions: text("instrucciones").notNull().default(""),
+    status: text("estado").notNull().default("Borrador"),
+    subject: text("materia"),
+    grade: text("grado"),
+    timeMode: text("modo_tiempo").notNull().default("Estricto"),
+    durationMinutes: integer("duracion_minutos"),
+    lockOnFocusLoss: boolean("bloqueo_foco").notNull().default(true),
+    createdAt: instant("created_at").notNull().defaultNow(),
+    updatedAt: instant("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("assessment_templates_family_version_unique").on(table.familyId, table.version),
+    index("assessment_templates_kind_status_idx").on(table.kind, table.status),
+  ],
+);
+
+export const assessmentTemplateQuestions = pgTable(
+  "assessment_template_questions",
+  {
+    id: text("plantilla_reactivo_id").primaryKey(),
+    templateId: text("plantilla_id").notNull().references(() => assessmentTemplates.id),
+    order: integer("orden").notNull(),
+    topic: text("tema"),
+    type: text("tipo").notNull(),
+    prompt: text("consigna").notNull(),
+    options: jsonb("opciones_json"),
+    correctAnswer: jsonb("respuesta_correcta"),
+    maxScore: numeric("puntaje_maximo").notNull(),
+    evaluationMethod: text("metodo_evaluacion").notNull(),
+    rubric: text("rubrica"),
+  },
+  (table) => [uniqueIndex("assessment_template_questions_order_unique").on(table.templateId, table.order)],
+);
+
 export const exams = pgTable(
   "exams",
   {
@@ -269,8 +331,19 @@ export const exams = pgTable(
     version: integer("version"),
     sourceExamId: text("examen_origen_id"),
     aiProvider: text("proveedor_ia"),
+    sourceTemplateId: text("plantilla_origen_id").references(() => assessmentTemplates.id),
+    purpose: text("proposito").notNull().default("Examen"),
+    assignmentMode: text("modo_asignacion").notNull().default("LegacyGroup"),
+    policyVersion: text("version_politica").notNull().default("legacy"),
+    timeMode: text("modo_tiempo").notNull().default("Estricto"),
+    lockOnFocusLoss: boolean("bloqueo_foco").notNull().default(true),
+    assignmentRequestId: text("solicitud_asignacion_id"),
+    assignmentFingerprint: text("solicitud_huella"),
   },
-  (table) => [index("exams_partial_group_status_idx").on(table.partialId, table.group, table.status)],
+  (table) => [
+    index("exams_partial_group_status_idx").on(table.partialId, table.group, table.status),
+    uniqueIndex("exams_assignment_request_unique").on(table.assignmentRequestId),
+  ],
 );
 
 export const examQuestions = pgTable(
@@ -331,6 +404,11 @@ export const examAttempts = pgTable(
     aiPending: boolean("ai_pendiente"),
     locked: boolean("bloqueo_activo"),
     lockedAt: instant("bloqueado_at"),
+    policyVersion: text("version_politica").notNull().default("legacy"),
+    timeMode: text("modo_tiempo").notNull().default("Estricto"),
+    lockOnFocusLoss: boolean("bloqueo_foco").notNull().default(true),
+    deadlineAt: instant("limite_at"),
+    elapsedSeconds: integer("transcurrido_segundos"),
     createdAt: instant("created_at"),
     updatedAt: instant("updated_at"),
   },

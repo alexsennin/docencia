@@ -4,6 +4,8 @@ import { hasSheetsBridge, sheetsBridge } from "../../../../lib/sheets-bridge";
 import type { PublicExam, Student } from "../../../../lib/exam-types";
 import { getDataBackend } from "../../../../lib/data-backend";
 import { lookupStudentInPostgres } from "../../../../lib/student-access";
+import { createStudentSession, studentSessionCookie, studentSessionMaxAge } from "../../../../lib/student-session";
+import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +16,11 @@ export async function POST(request: Request) {
     if (!studentId) return Response.json({ error: "Escribe tu ID escolar." }, { status: 400 });
     if (getDataBackend() === "postgres") {
       const data = await lookupStudentInPostgres(studentId);
-      return Response.json({ ...data, source: "postgres" }, { headers: { "Cache-Control": "no-store" } });
+      const response = NextResponse.json({ ...data, source: "postgres" }, { headers: { "Cache-Control": "no-store" } });
+      response.cookies.set(studentSessionCookie, await createStudentSession(data.student.id), {
+        httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict", path: "/", maxAge: studentSessionMaxAge,
+      });
+      return response;
     }
     if (hasSheetsBridge()) {
       const data = await sheetsBridge<{ student: Student; exams: PublicExam[] }>("lookupStudent", { studentId });

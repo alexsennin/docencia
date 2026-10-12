@@ -1,5 +1,13 @@
 # Arquitectura
 
+## Evaluaciones reutilizables (Producción 2026-10-12; corrección de guardado/prueba en curso)
+
+`assessment_templates` y `assessment_template_questions` guardan contenido versionado en dos repositorios: Exámenes y Actividades. Guardar crea un borrador; aprobar habilita la aplicación. `assignAssessmentInPostgres` copia reactivos y política a un examen publicado, asigna sólo los alumnos activos del grupo del catálogo y deduplica el intento de asignación por `requestId`. Una Actividad crea además una tarea vinculada a la sesión; su puntaje en EC deriva del intento y no crea una segunda nota editable. El componente EX ignora las actividades. Los exámenes heredados conservan su asignación y política anteriores.
+
+El alumno conserva acceso por ID. `student_sessions` guarda sólo el hash del token; la cookie `HttpOnly`, `SameSite=Strict` y `Secure` en Producción limita cada consulta/operación al ID de la sesión. La sesión dura ocho horas y se revoca al salir. Este control no convierte el ID en una contraseña. Los intentos nuevos guardan versión de política, tiempo estricto o libre, bloqueo opcional por pantalla completa/pérdida de foco y deadline fijo. El servidor rechaza cambios tras el deadline. Un cierre recupera respuestas autoguardadas y la evaluación; el cron protegido con `CRON_SECRET` y la acción docente procesan vencidos. El cron diario es respaldo de baja frecuencia, por lo que puede haber demora en la proyección de la nota sin actividad adicional.
+
+La migración `0009_next_wither.sql` y el cron de `vercel.json` están aplicados en Neon/Vercel Production. Corrección local en curso: borradores incompletos se pueden guardar y reabrir; `/docente/probar` consulta plantillas guardadas y evalúa respuestas sin persistir intentos. Verificar flujo visual y desplegar la corrección antes de considerarla publicada.
+
 ## Alcance vigente: Producción en Neon (2026-10-01)
 
 Por instrucción explícita del usuario, Vercel Production (docencia.integratech.app) ya selecciona PostgreSQL en Neon. Neon es la fuente operativa actual; Docker PostgreSQL local conserva una copia independiente y Sheets/Apps Script quedan como legado, sin desactivación. La UI sigue en Vercel: Neon es el backend PostgreSQL, no el host del frontend. La aceptación autenticada consultó en Producción los 171 alumnos, 30 sesiones y 760 asistencias. La clave de Gemini está configurada en Vercel, pero no se hizo una llamada de prueba.

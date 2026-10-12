@@ -1,12 +1,17 @@
 import { getDataBackend } from "../../../../lib/data-backend";
 import { ExamWorkflowError, unlockExamAttemptInPostgres } from "../../../../lib/exam-attempt-postgres";
 import { hasSheetsBridge, sheetsBridge } from "../../../../lib/sheets-bridge";
+import { requireStudentId } from "../../../../lib/student-session";
 
 export async function POST(request: Request) {
   try {
     const payload = await request.json() as { attemptId?: string; password?: string };
     if (!payload.attemptId || !payload.password) return Response.json({ error: "Captura la contraseña de desbloqueo." }, { status: 400 });
-    if (getDataBackend() === "postgres") return Response.json(await unlockExamAttemptInPostgres(payload));
+    if (getDataBackend() === "postgres") {
+      const studentId = await requireStudentId();
+      if (!studentId) return Response.json({ error: "Inicia sesión como alumno." }, { status: 401 });
+      return Response.json(await unlockExamAttemptInPostgres({ ...payload, studentId }));
+    }
     if (hasSheetsBridge()) return Response.json(await sheetsBridge("unlockAttempt", payload));
     const configuredPassword = process.env.EXAM_UNLOCK_PASSWORD;
     if (!configuredPassword) return Response.json({ error: "Falta configurar la contraseña de desbloqueo en el servidor." }, { status: 503 });

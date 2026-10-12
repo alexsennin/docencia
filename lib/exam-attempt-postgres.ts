@@ -1,5 +1,5 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
 import { getDatabase } from "../db/client.ts";
 import {
   aiEvaluations,
@@ -9,10 +9,12 @@ import {
   examAttempts,
   examQuestions,
   exams,
+  tasks,
   students,
 } from "../db/schema.ts";
 import { evaluateAutomatic, toPublicExam } from "./exam-engine.ts";
 import { toExamDefinition, toExamQuestion } from "./student-access.ts";
+import { refreshGradeSnapshotsInPostgres } from "./teacher-session-postgres.ts";
 import type { AnswerMap, ExamDefinition, ExamQuestion, ExamResult } from "./exam-types.ts";
 
 const ACTIVE_STATES = ["Activo", "Bloqueado", "Evaluando"] as const;
@@ -94,10 +96,37 @@ async function loadExamDefinition(examId: string, publishedOnly: boolean): Promi
 }
 
 function deadlineFor(attempt: typeof examAttempts.$inferSelect) {
+  if (attempt.policyVersion === "v1") {
+    if (attempt.timeMode === "Libre") return null;
+    const fixed = Date.parse(attempt.deadlineAt ?? "");
+    if (!Number.isFinite(fixed)) throw new ExamWorkflowError("No se pudo validar el límite de tiempo del intento.", 409);
+    return new Date(fixed);
+  }
   const startedAt = Date.parse(attempt.startedAt ?? "");
   const durationMinutes = Number(attempt.timeLimitMinutes ?? 0);
   if (!Number.isFinite(startedAt) || !Number.isFinite(durationMinutes) || durationMinutes <= 0) throw new ExamWorkflowError("No se pudo validar el límite de tiempo del intento.", 409);
   return new Date(startedAt + durationMinutes * 60_000);
+}
+
+function expired(attempt: typeof examAttempts.$inferSelect, now: Date) {
+  const deadline = deadlineFor(attempt);
+  return deadline !== null && now.getTime() >= deadline.getTime() + (attempt.policyVersion === "v1" ? 0 : 60_000);
+}
+
+type ExamTransaction = Parameters<Parameters<ReturnType<typeof getDatabase>["transaction"]>[0]>[0];
+async function ensureActiveAssignment(tx: ExamTransaction, examId: string, studentId: string) {
+  const [exam] = await tx.select().from(exams).where(eq(exams.id, examId)).limit(1);
+  if (!exam || exam.status !== "Publicado") throw new ExamWorkflowError("La evaluación ya no está disponible.", 403);
+  if (exam.assignmentMode !== "Explicit") return exam;
+  const [assignment] = await tx.select().from(examAssignments).where(and(
+    eq(examAssignments.examId, examId), eq(examAssignments.studentId, studentId), eq(examAssignments.status, "Activo"),
+  )).limit(1);
+  if (!assignment) throw new ExamWorkflowError("La evaluación ya no está asignada a este alumno.", 403);
+  if (exam.purpose === "Actividad") {
+    const [task] = await tx.select().from(tasks).where(and(eq(tasks.assessmentExamId, examId), eq(tasks.active, true))).limit(1);
+    if (!task) throw new ExamWorkflowError("El trabajo fue archivado.", 403);
+  }
+  return exam;
 }
 
 function eligibleForExam(
@@ -108,7 +137,7 @@ function eligibleForExam(
   const explicitlyAssigned = assignmentRows.some((item) => item.status?.trim().toLowerCase() === "activo");
   const sameGroup = String(student.grade ?? "") === String(exam.grade ?? "")
     && (String(exam.group ?? "").toUpperCase() === "TODOS" || String(student.group ?? "") === String(exam.group ?? ""));
-  return explicitlyAssigned || sameGroup;
+  return exam.assignmentMode === "Explicit" ? explicitlyAssigned : explicitlyAssigned || sameGroup;
 }
 
 function resultFromRows(
@@ -218,34 +247,37 @@ export async function startExamAttemptInPostgres(input: { studentId?: string; ex
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`exam-attempt:${examId}:${studentId.toUpperCase()}`}))`);
     const [student] = await tx.select().from(students).where(sql`upper(trim(${students.id})) = ${studentId.toUpperCase()}`).limit(1);
     const [exam] = await tx.select().from(exams).where(eq(exams.id, examId)).for("update").limit(1);
-    if (!student || !exam || exam.status !== "Publicado") throw new ExamWorkflowError("El examen no está disponible para este alumno.", 403);
+    if (!student || !student.active || !exam || exam.status !== "Publicado") throw new ExamWorkflowError("La evaluación no está disponible para este alumno.", 403);
     const assignmentRows = await tx.select().from(examAssignments).where(and(
       eq(examAssignments.examId, examId),
       sql`upper(trim(${examAssignments.studentId})) = ${student.id.toUpperCase()}`,
       sql`lower(trim(coalesce(${examAssignments.status}, ''))) = 'activo'`,
     ));
     if (!eligibleForExam(student, exam, assignmentRows)) throw new ExamWorkflowError("El examen no está asignado a este alumno.", 403);
+    await ensureActiveAssignment(tx, examId, student.id);
 
     const related = await tx.select().from(examAttempts).where(and(
       eq(examAttempts.examId, examId),
       sql`upper(trim(${examAttempts.studentId})) = ${student.id.toUpperCase()}`,
     )).orderBy(asc(examAttempts.createdAt), asc(examAttempts.id));
-    const existing = related.find((row) => ACTIVE_STATES.includes(row.status as typeof ACTIVE_STATES[number])) ?? related.at(-1);
+    const validRelated = related.filter((row) => row.status !== "Revocado");
+    const existing = validRelated.find((row) => ACTIVE_STATES.includes(row.status as typeof ACTIVE_STATES[number])) ?? validRelated.at(-1);
     if (existing && ACTIVE_STATES.includes(existing.status as typeof ACTIVE_STATES[number])) {
       const answersRows = await tx.select().from(examAnswers).where(eq(examAnswers.attemptId, existing.id));
       const startDate = new Date(existing.startedAt ?? now.toISOString());
       let current = existing;
       let submissionPending = existing.status === "Evaluando";
-      if (existing.status === "Activo" && now.getTime() > deadlineFor(existing).getTime() + 60_000) {
+      if ((existing.status === "Activo" || existing.status === "Bloqueado") && expired(existing, now)) {
         const expiredAt = now.toISOString();
-        const [updated] = await tx.update(examAttempts).set({ status: "Evaluando", finishedAt: expiredAt, locked: false, lockedAt: null, updatedAt: expiredAt }).where(eq(examAttempts.id, existing.id)).returning();
+        const [updated] = await tx.update(examAttempts).set({ status: "Evaluando", finishedAt: expiredAt, locked: false, lockedAt: null,
+          elapsedSeconds: Math.max(0, Math.floor((now.getTime() - startDate.getTime()) / 1000)), updatedAt: expiredAt }).where(eq(examAttempts.id, existing.id)).returning();
         current = updated ?? existing;
         submissionPending = true;
       }
       return {
         attemptId: current.id,
         startedAt: startDate.toISOString(),
-        deadlineAt: deadlineFor(current).toISOString(),
+        deadlineAt: deadlineFor(current)?.toISOString() ?? null,
         exam: toPublicExam(examDefinition),
         answers: storedAnswers(answersRows),
         locked: current.status === "Bloqueado",
@@ -262,6 +294,8 @@ export async function startExamAttemptInPostgres(input: { studentId?: string; ex
     const startedAt = now.toISOString();
     const attemptId = `attempt-${randomUUID()}`;
     const durationMinutes = Number(exam.durationMinutes ?? examDefinition.durationMinutes ?? 50);
+    const deadlineAt = exam.policyVersion === "v1" && exam.timeMode === "Libre"
+      ? null : new Date(now.getTime() + durationMinutes * 60_000).toISOString();
     const [created] = await tx.insert(examAttempts).values({
       id: attemptId,
       examId,
@@ -271,7 +305,9 @@ export async function startExamAttemptInPostgres(input: { studentId?: string; ex
       status: "Activo",
       startedAt,
       finishedAt: null,
-      timeLimitMinutes: String(durationMinutes),
+      timeLimitMinutes: deadlineAt ? String(durationMinutes) : null,
+      policyVersion: exam.policyVersion, timeMode: exam.timeMode, lockOnFocusLoss: exam.lockOnFocusLoss,
+      deadlineAt, elapsedSeconds: null,
       automaticScore: null,
       aiScore: null,
       totalScore: null,
@@ -286,7 +322,7 @@ export async function startExamAttemptInPostgres(input: { studentId?: string; ex
     return {
       attemptId,
       startedAt,
-      deadlineAt: new Date(now.getTime() + durationMinutes * 60_000).toISOString(),
+      deadlineAt,
       exam: toPublicExam(examDefinition),
     };
   });
@@ -304,8 +340,9 @@ export async function saveExamAnswersInPostgres(input: { attemptId?: string; exa
   return db.transaction(async (tx) => {
     const [attempt] = await tx.select().from(examAttempts).where(eq(examAttempts.id, attemptId)).for("update").limit(1);
     if (!attempt || !sameId(attempt.studentId, studentId) || attempt.examId !== examId) throw new ExamWorkflowError("Intento no autorizado.", 403);
+    await ensureActiveAssignment(tx, examId, attempt.studentId);
     if (attempt.status !== "Activo" || attempt.locked) throw new ExamWorkflowError(attempt.status === "Bloqueado" ? "El examen está bloqueado. Solicita al docente que lo desbloquee." : "El examen ya fue enviado.", 409);
-    if (now.getTime() > deadlineFor(attempt).getTime() + 60_000) throw new ExamWorkflowError("El tiempo del examen terminó; no se aceptan más cambios.", 409);
+    if (expired(attempt, now)) throw new ExamWorkflowError("El tiempo de la evaluación terminó; no se aceptan más cambios.", 409);
     const savedAt = now.toISOString();
     const questionById = new Map(exam.questions.map((question) => [question.id, question]));
     for (const [questionId, answer] of Object.entries(answers)) {
@@ -342,7 +379,9 @@ export async function recordExamEventInPostgres(input: { attemptId?: string; exa
   return db.transaction(async (tx) => {
     const [attempt] = await tx.select().from(examAttempts).where(eq(examAttempts.id, attemptId)).for("update").limit(1);
     if (!attempt || !sameId(attempt.studentId, studentId) || attempt.examId !== examId) throw new ExamWorkflowError("Intento no autorizado.", 403);
+    await ensureActiveAssignment(tx, examId, attempt.studentId);
     if (!["Activo", "Bloqueado"].includes(String(attempt.status ?? ""))) throw new ExamWorkflowError("El intento ya terminó.", 409);
+    if (expired(attempt, now)) throw new ExamWorkflowError("El tiempo de la evaluación terminó.", 409);
     const occurredAt = now.toISOString();
     await tx.insert(auditEvents).values({
       id: `event-${randomUUID()}`,
@@ -355,14 +394,14 @@ export async function recordExamEventInPostgres(input: { attemptId?: string; exa
       details: { event },
       occurredAt,
     });
-    if (event === "window_blur" || event === "visibility_hidden" || event === "fullscreen_exit") {
+    if (attempt.policyVersion !== "v1" || attempt.lockOnFocusLoss) {
       await tx.update(examAttempts).set({ status: "Bloqueado", locked: true, lockedAt: occurredAt, updatedAt: occurredAt }).where(eq(examAttempts.id, attemptId));
     }
     return { recorded: true };
   });
 }
 
-export async function unlockExamAttemptInPostgres(input: { attemptId?: string; password?: string }, now = new Date()) {
+export async function unlockExamAttemptInPostgres(input: { attemptId?: string; password?: string; studentId?: string }, now = new Date()) {
   const attemptId = String(input.attemptId ?? "").trim();
   const password = String(input.password ?? "");
   if (!attemptId || !password) throw new ExamWorkflowError("Captura la contraseña de desbloqueo.");
@@ -374,15 +413,18 @@ export async function unlockExamAttemptInPostgres(input: { attemptId?: string; p
   return db.transaction(async (tx) => {
     const [attempt] = await tx.select().from(examAttempts).where(and(eq(examAttempts.id, attemptId), eq(examAttempts.status, "Bloqueado"))).for("update").limit(1);
     if (!attempt) throw new ExamWorkflowError("No hay un intento bloqueado para desbloquear.", 404);
+    if (input.studentId && !sameId(attempt.studentId, input.studentId)) throw new ExamWorkflowError("Intento no autorizado.", 403);
+    await ensureActiveAssignment(tx, attempt.examId, attempt.studentId);
+    if (expired(attempt, now)) throw new ExamWorkflowError("El tiempo de la evaluación terminó.", 409);
     const blockedAtMs = Date.parse(attempt.lockedAt ?? attempt.updatedAt ?? now.toISOString());
     const pauseMinutes = Number.isFinite(blockedAtMs) ? Math.max(0, (now.getTime() - blockedAtMs) / 60_000) : 0;
-    const durationMinutes = Number(attempt.timeLimitMinutes ?? 50) + pauseMinutes;
+    const durationMinutes = Number(attempt.timeLimitMinutes ?? 50) + (attempt.policyVersion === "v1" ? 0 : pauseMinutes);
     const unlockedAt = now.toISOString();
     const [updated] = await tx.update(examAttempts).set({
       status: "Activo", locked: false, lockedAt: null, timeLimitMinutes: String(durationMinutes), updatedAt: unlockedAt,
     }).where(eq(examAttempts.id, attemptId)).returning();
     await insertAuditEvent(tx, "exam_unlocked", updated!, { pausedMinutes: pauseMinutes }, unlockedAt);
-    return { ok: true, unlockedAt, deadlineAt: deadlineFor(updated!).toISOString() };
+    return { ok: true, unlockedAt, deadlineAt: deadlineFor(updated!)?.toISOString() ?? null };
   });
 }
 
@@ -440,6 +482,7 @@ export async function submitExamAttemptInPostgres(
   const accepted = await db.transaction(async (tx) => {
     const [attempt] = await tx.select().from(examAttempts).where(eq(examAttempts.id, attemptId)).for("update").limit(1);
     if (!attempt || !sameId(attempt.studentId, studentId) || attempt.examId !== examId) throw new ExamWorkflowError("Intento no autorizado.", 403);
+    await ensureActiveAssignment(tx, examId, attempt.studentId);
     if (attempt.status === "Definitivo" || attempt.status === "Provisional") {
       const answerRows = await tx.select().from(examAnswers).where(eq(examAnswers.attemptId, attemptId));
       const evaluationRows = await tx.select().from(aiEvaluations).where(eq(aiEvaluations.attemptId, attemptId));
@@ -448,7 +491,7 @@ export async function submitExamAttemptInPostgres(
     if (attempt.status === "Bloqueado") throw new ExamWorkflowError("El examen está bloqueado. Solicita al docente que lo desbloquee.", 409);
     if (attempt.status !== "Activo" && attempt.status !== "Evaluando") throw new ExamWorkflowError("El examen ya no está disponible para envío.", 409);
     if (attempt.status === "Activo") {
-      if (now.getTime() > deadlineFor(attempt).getTime() + 60_000) throw new ExamWorkflowError("El tiempo del examen terminó y el envío llegó fuera del margen permitido. Solicita apoyo al docente.", 409);
+      if (expired(attempt, now)) throw new ExamWorkflowError("El tiempo de la evaluación terminó y el envío llegó tarde. Solicita apoyo al docente.", 409);
       const answers = validateAnswerMap(input.answers, exam.questions, true);
       const acceptedAt = now.toISOString();
       for (const question of exam.questions) {
@@ -478,7 +521,8 @@ export async function submitExamAttemptInPostgres(
           });
         }
       }
-      const [updated] = await tx.update(examAttempts).set({ status: "Evaluando", finishedAt: acceptedAt, locked: false, lockedAt: null, updatedAt: acceptedAt }).where(eq(examAttempts.id, attemptId)).returning();
+      const [updated] = await tx.update(examAttempts).set({ status: "Evaluando", finishedAt: acceptedAt, locked: false, lockedAt: null,
+        elapsedSeconds: Math.max(0, Math.floor((now.getTime() - Date.parse(attempt.startedAt ?? acceptedAt)) / 1000)), updatedAt: acceptedAt }).where(eq(examAttempts.id, attemptId)).returning();
       await insertAuditEvent(tx, "exam_submission_accepted", updated!, { reason: "student_submit" }, acceptedAt);
     }
     const attemptRow = (await tx.select().from(examAttempts).where(eq(examAttempts.id, attemptId)).limit(1))[0];
@@ -867,7 +911,7 @@ export async function finalizeExamAttemptByTeacherInPostgres(input: { attemptId?
   return { ...finalized, partialId: accepted.attempt.partialId };
 }
 
-export async function getTeacherExamResultsInPostgres(options: { includeInProgress?: boolean } = {}) {
+export async function getTeacherExamResultsInPostgres(options: { includeInProgress?: boolean; kind?: "Examen" | "Actividad" } = {}) {
   const db = getDatabase();
   const [studentRows, allExamRows, assignmentRows, attemptRows] = await Promise.all([
     db.select().from(students).orderBy(asc(students.grade), asc(students.group), asc(students.name)),
@@ -876,15 +920,18 @@ export async function getTeacherExamResultsInPostgres(options: { includeInProgre
     db.select().from(examAttempts).where(inArray(examAttempts.status, options.includeInProgress
       ? ["Definitivo", "Provisional", ...ACTIVE_STATES] : ["Definitivo", "Provisional"])),
   ]);
-  const publishedExams = allExamRows.filter((exam) => exam.status === "Publicado");
+  const visibleExams = allExamRows.filter((exam) => exam.purpose === (options.kind ?? "Examen"));
+  const visibleIds = new Set(visibleExams.map((exam) => exam.id));
+  const visibleAttempts = attemptRows.filter((attempt) => visibleIds.has(attempt.examId));
+  const publishedExams = visibleExams.filter((exam) => exam.status === "Publicado");
   const publishedIds = publishedExams.map((exam) => exam.id);
-  const relevantExamIds = Array.from(new Set([...publishedIds, ...attemptRows.map((attempt) => attempt.examId)]));
+  const relevantExamIds = Array.from(new Set([...publishedIds, ...visibleAttempts.map((attempt) => attempt.examId)]));
   if (!relevantExamIds.length) return { students: [], exams: [], results: [] };
 
   const [questionRows, answerRows, evaluationRows] = await Promise.all([
     db.select().from(examQuestions).where(and(inArray(examQuestions.examId, relevantExamIds), ACTIVE_QUESTION)).orderBy(asc(examQuestions.order), asc(examQuestions.id)),
-    attemptRows.length ? db.select().from(examAnswers).where(inArray(examAnswers.attemptId, attemptRows.map((attempt) => attempt.id))) : Promise.resolve([]),
-    attemptRows.length ? db.select().from(aiEvaluations).where(inArray(aiEvaluations.attemptId, attemptRows.map((attempt) => attempt.id))) : Promise.resolve([]),
+    visibleAttempts.length ? db.select().from(examAnswers).where(inArray(examAnswers.attemptId, visibleAttempts.map((attempt) => attempt.id))) : Promise.resolve([]),
+    visibleAttempts.length ? db.select().from(aiEvaluations).where(inArray(aiEvaluations.attemptId, visibleAttempts.map((attempt) => attempt.id))) : Promise.resolve([]),
   ]);
   const studentById = new Map(studentRows.map((student) => [student.id.trim().toUpperCase(), student]));
   const examById = new Map(allExamRows.map((exam) => [exam.id, exam]));
@@ -935,7 +982,7 @@ export async function getTeacherExamResultsInPostgres(options: { includeInProgre
         questions: (questionsByExam.get(exam.id) ?? []).map((question) => ({ questionId: question.id, order: Number(question.order ?? 0), maxScore: Number(question.maxScore ?? 0), prompt: question.prompt })),
       };
     }),
-    results: attemptRows.flatMap((attempt) => {
+    results: visibleAttempts.flatMap((attempt) => {
       const student = studentById.get(attempt.studentId.trim().toUpperCase());
       const exam = examById.get(attempt.examId);
       if (!exam) return [];
@@ -959,7 +1006,7 @@ export async function getTeacherExamResultsInPostgres(options: { includeInProgre
           ? Date.now() - Date.parse(attempt.updatedAt ?? attempt.finishedAt ?? "") > AI_PROCESSING_LEASE_MS
             ? "Envío aceptado; evaluación interrumpida" : "Envío aceptado; evaluación en curso"
           : attempt.status === "Bloqueado" ? "Bloqueado; sin enviar"
-          : Date.now() > deadlineFor(attempt).getTime() + 60_000 ? "Tiempo agotado; sin enviar" : "En curso; sin enviar",
+          : expired(attempt, new Date()) ? "Tiempo agotado; sin enviar" : "En curso; sin enviar",
         score: attempt.totalScore === null ? null : Number(attempt.totalScore),
         grade10: attempt.gradeOnTen === null ? null : Number(attempt.gradeOnTen),
         manualGradeLocked: attempt.manualGradeLocked,
@@ -990,6 +1037,30 @@ export async function getTeacherExamResultsInPostgres(options: { includeInProgre
   };
 }
 
+export async function finalizeExpiredAssessmentAttemptsInPostgres(now = new Date(), limit = 20) {
+  const db = getDatabase();
+  const due = await db.select({ id: examAttempts.id, examId: examAttempts.examId, studentId: examAttempts.studentId })
+    .from(examAttempts).where(and(
+      eq(examAttempts.policyVersion, "v1"), eq(examAttempts.timeMode, "Estricto"),
+      inArray(examAttempts.status, ["Activo", "Bloqueado", "Evaluando"]),
+      lte(examAttempts.deadlineAt, now.toISOString()),
+    )).limit(Math.max(1, Math.min(limit, 50)));
+  let finalized = 0;
+  let failed = 0;
+  for (const attempt of due) {
+    try {
+      const state = await startExamAttemptInPostgres({ examId: attempt.examId, studentId: attempt.studentId }, now);
+      if (state.attemptId !== attempt.id || !state.submissionPending) continue;
+      const result = await submitExamAttemptInPostgres({ attemptId: attempt.id, examId: attempt.examId, studentId: attempt.studentId, answers: {} });
+      await refreshGradeSnapshotsInPostgres(result.partialId);
+      finalized++;
+    } catch {
+      failed++;
+    }
+  }
+  return { scanned: due.length, finalized, failed };
+}
+
 export async function revokeExamAttemptsInPostgres(input: { studentId?: string; examId?: string }) {
   const studentId = String(input.studentId ?? "").trim();
   const examId = String(input.examId ?? "").trim();
@@ -1006,10 +1077,17 @@ export async function revokeExamAttemptsInPostgres(input: { studentId?: string; 
     if (!attempts.length) throw new ExamWorkflowError("El alumno ya no tiene intentos entregados de este examen para revocar. Actualiza la búsqueda e inténtalo de nuevo.", 409);
 
     const attemptIds = attempts.map((attempt) => attempt.id);
-    const deletedAnswers = await tx.delete(examAnswers).where(inArray(examAnswers.attemptId, attemptIds)).returning({ id: examAnswers.id });
-    const deletedAi = await tx.delete(aiEvaluations).where(inArray(aiEvaluations.attemptId, attemptIds)).returning({ id: aiEvaluations.id });
-    const deletedAttempts = await tx.delete(examAttempts).where(inArray(examAttempts.id, attemptIds)).returning({ id: examAttempts.id });
     const revokedAt = new Date().toISOString();
+    let deletedAnswers = 0;
+    let deletedAi = 0;
+    let deletedAttempts = 0;
+    if (exam.policyVersion === "v1") {
+      await tx.update(examAttempts).set({ status: "Revocado", updatedAt: revokedAt }).where(inArray(examAttempts.id, attemptIds));
+    } else {
+      deletedAnswers = (await tx.delete(examAnswers).where(inArray(examAnswers.attemptId, attemptIds)).returning({ id: examAnswers.id })).length;
+      deletedAi = (await tx.delete(aiEvaluations).where(inArray(aiEvaluations.attemptId, attemptIds)).returning({ id: aiEvaluations.id })).length;
+      deletedAttempts = (await tx.delete(examAttempts).where(inArray(examAttempts.id, attemptIds)).returning({ id: examAttempts.id })).length;
+    }
     await tx.insert(auditEvents).values({
       id: `event-${randomUUID()}`,
       type: "exam_revoked",
@@ -1020,9 +1098,10 @@ export async function revokeExamAttemptsInPostgres(input: { studentId?: string; 
       actorId: "docente",
       details: {
         attemptIds,
-        deletedAnswers: deletedAnswers.length,
-        deletedAi: deletedAi.length,
-        deletedAttempts: deletedAttempts.length,
+        deletedAnswers,
+        deletedAi,
+        deletedAttempts,
+        retainedEvidence: exam.policyVersion === "v1",
       },
       occurredAt: revokedAt,
     });
@@ -1031,9 +1110,9 @@ export async function revokeExamAttemptsInPostgres(input: { studentId?: string; 
       examId,
       partialId: exam.partialId,
       studentId,
-      deletedAnswers: deletedAnswers.length,
-      deletedAi: deletedAi.length,
-      deletedAttempts: deletedAttempts.length,
+      deletedAnswers,
+      deletedAi,
+      deletedAttempts,
       canRetake: true,
     };
   });

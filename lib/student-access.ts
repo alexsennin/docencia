@@ -2,7 +2,7 @@ import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import type { ExamDefinition, ExamQuestion, PublicExam, Student } from "./exam-types.ts";
 import { toPublicExam } from "./exam-engine.ts";
 import { getDatabase } from "../db/client.ts";
-import { examAssignments, examAttempts, examQuestions, exams, students } from "../db/schema.ts";
+import { examAssignments, examAttempts, examQuestions, exams, students, tasks } from "../db/schema.ts";
 
 function parseJson(value: unknown): unknown {
   if (typeof value !== "string") return value;
@@ -58,6 +58,10 @@ export function toExamDefinition(row: typeof exams.$inferSelect, questions: Exam
     durationMinutes: numberOr(row.durationMinutes, 50),
     maxScore: numberOr(row.maxScore, 100),
     requiresFullscreen: row.requiresFullscreen ?? false,
+    purpose: row.purpose === "Actividad" ? "Actividad" : "Examen",
+    timeMode: row.timeMode === "Libre" ? "Libre" : "Estricto",
+    lockOnFocusLoss: row.lockOnFocusLoss,
+    policyVersion: row.policyVersion === "v1" ? "v1" : "legacy",
     instructions: row.instructions ?? "",
     questions,
   };
@@ -98,14 +102,18 @@ export async function lookupStudentInPostgres(studentId: string): Promise<{ stud
   if (student.grade) {
     eligibleExamConditions.push(and(
       eq(exams.status, "Publicado"),
+      eq(exams.assignmentMode, "LegacyGroup"),
       eq(exams.grade, student.grade),
       or(eq(exams.group, "TODOS"), eq(exams.group, student.group)),
     ));
   }
 
-  const examRows = eligibleExamConditions.length
+  const examRowsRaw = eligibleExamConditions.length
     ? await db.select().from(exams).where(or(...eligibleExamConditions)).orderBy(asc(exams.createdAt), asc(exams.id))
     : [];
+  const linkedTasks = await db.select().from(tasks).where(eq(tasks.active, true));
+  const activeLinkedIds = new Set(linkedTasks.filter((task) => task.assessmentExamId && task.group === `${student.grade} ${student.group}`.trim()).map((task) => task.assessmentExamId));
+  const examRows = examRowsRaw.filter((row) => row.purpose !== "Actividad" || activeLinkedIds.has(row.id));
   if (examRows.length === 0) return { student, exams: [] };
 
   const examIds = examRows.map((row) => row.id);
@@ -129,7 +137,8 @@ export async function lookupStudentInPostgres(studentId: string): Promise<{ stud
   const publicExams = examRows.map((examRow) => {
     const definition = toExamDefinition(examRow, questionsByExam.get(examRow.id) ?? []);
     const relatedAttempts = attemptRows.filter((attempt) => attempt.examId === examRow.id);
-    const attempt = relatedAttempts.find((item) => item.status !== "Activo" && item.status !== "Bloqueado") ?? relatedAttempts[0];
+    const attempt = relatedAttempts.find((item) => item.status !== "Activo" && item.status !== "Bloqueado" && item.status !== "Revocado")
+      ?? relatedAttempts.find((item) => item.status !== "Revocado");
     return { ...toPublicExam(definition), attemptStatus: attempt?.status ?? "Disponible" };
   });
 

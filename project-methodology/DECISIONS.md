@@ -1,5 +1,13 @@
 # Decisiones duraderas
 
+## DEC-017 — Evaluaciones reutilizables y trabajos en modalidad examen
+
+- **Fecha / estado:** 2026-10-12 · Flujo base publicado en Producción; corrección de guardado y Espacio de Pruebas en curso local.
+- **Decisión:** separar plantillas de Examen y Actividad; la docente guarda una versión, la aprueba y luego la aplica explícitamente al grupo del catálogo. Una Actividad se vincula a la sesión y aporta una sola nota derivada del intento a EC; un Examen aporta a EX. Nuevas aplicaciones guardan política inmutable de tiempo estricto/libre y bloqueo opcional por pantalla completa/pérdida de foco. Las aplicaciones históricas conservan su contrato.
+- **Acceso:** por instrucción expresa del usuario, el alumno continúa entrando sólo con ID. Una sesión de servidor ligada al ID protege las rutas posteriores; no se considera verificación fuerte de identidad.
+- **Tiempo y cierre:** el deadline estricto se persiste y no se extiende al desbloquear. Alumno, docente y cron pueden cerrar intentos vencidos usando respuestas autoguardadas. El cron diario es respaldo; el intervalo efectivo se revisará según plan y necesidad operativa.
+- **Límites:** Producción tiene el flujo base y migración `0009`; corrección de borradores incompletos y prueba directa de plantillas guardadas todavía no desplegada. El recorrido autenticado con datos sintéticos en Producción sigue pendiente para evitar escrituras en datos reales.
+
 ## DEC-001 — Mantener la arquitectura operativa Sheets + Apps Script + Vercel
 
 - **Fecha / estado:** 2026-09-30 · Aceptada; describe el sistema actual.

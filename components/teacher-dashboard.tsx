@@ -5,7 +5,7 @@ import { AdminExamControls } from "./admin-exam-controls";
 import { TeacherGeminiSettings } from "./teacher-gemini-settings";
 import { TeacherAcademicModule } from "./teacher-academic-module";
 import { TeacherCaRubric } from "./teacher-ca-rubric";
-import { TeacherExamAuthoring } from "./teacher-exam-authoring";
+import { TeacherAssessmentRepository } from "./teacher-assessment-repository";
 import { TeacherExamGradeMatrix } from "./teacher-exam-grade-matrix";
 import { TeacherStudentManagement } from "./teacher-student-management";
 import { ProgressOverlay } from "./progress-overlay";
@@ -221,7 +221,7 @@ export default function Home() {
               <div><strong>Probar exámenes como docente</strong><span>La simulación no crea intentos ni modifica calificaciones de alumnos.</span></div>
               <a className="primary-button" href="/docente/probar">Abrir espacio de pruebas</a>
             </div>
-            <TeacherExamAuthoring active={activeSection === "examenes" && examView === "constructor"} partialId={selectedPartialId} />
+            <TeacherAssessmentRepository active={activeSection === "examenes" && examView === "constructor"} partialId={selectedPartialId} />
             <details className="exam-secondary-tools" onToggle={(event) => setGeminiSettingsOpen(event.currentTarget.open)}><summary>Configuración de IA</summary>{geminiSettingsOpen && <TeacherGeminiSettings active={activeSection === "examenes" && examView === "constructor"} />}</details>
           </>}
           {examView === "revocador" && <>
