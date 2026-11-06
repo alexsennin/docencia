@@ -162,9 +162,12 @@ async function requestGeminiRubric(prompt: string): Promise<{ data: unknown; mod
   const apiKey = process.env.GEMINI_API_KEY;
   const model = process.env.GEMINI_MODEL || "gemini-3.6-flash";
   if (!apiKey) throw new Error("La rúbrica requiere configurar GEMINI_API_KEY como variable de entorno del servidor.");
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      "x-goog-api-key": apiKey,
+    },
     signal: AbortSignal.timeout(35_000),
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],

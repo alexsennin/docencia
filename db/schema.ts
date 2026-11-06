@@ -296,7 +296,7 @@ export const assessmentTemplateQuestions = pgTable(
   "assessment_template_questions",
   {
     id: text("plantilla_reactivo_id").primaryKey(),
-    templateId: text("plantilla_id").notNull().references(() => assessmentTemplates.id),
+    templateId: text("plantilla_id").notNull().references(() => assessmentTemplates.id, { onDelete: "cascade" }),
     order: integer("orden").notNull(),
     topic: text("tema"),
     type: text("tipo").notNull(),

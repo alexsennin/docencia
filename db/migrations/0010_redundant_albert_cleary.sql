@@ -1,0 +1,3 @@
+ALTER TABLE "assessment_template_questions" DROP CONSTRAINT "assessment_template_questions_plantilla_id_assessment_templates_plantilla_id_fk";
+--> statement-breakpoint
+ALTER TABLE "assessment_template_questions" ADD CONSTRAINT "assessment_template_questions_plantilla_id_assessment_templates_plantilla_id_fk" FOREIGN KEY ("plantilla_id") REFERENCES "public"."assessment_templates"("plantilla_id") ON DELETE cascade ON UPDATE no action;

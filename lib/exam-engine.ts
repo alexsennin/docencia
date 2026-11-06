@@ -11,12 +11,55 @@ function normalize(value: unknown) {
   return String(value ?? "").trim().toUpperCase();
 }
 
+export function extractClassificationItems(prompt: string): string[] {
+  const numbered = /(?:^|\s)(?:\d+[\.\)]\s*)([^\n\r]+?)(?=(?:\s+\d+[\.\)]|$))/g;
+  const matches: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = numbered.exec(prompt)) !== null) {
+    const text = m[1].trim();
+    if (text) matches.push(text);
+  }
+  if (matches.length >= 2) return matches;
+
+  const lines = prompt.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+  if (lines.length > 2 && lines.slice(1).every((l) => /^[-*•\d\w\)]/.test(l))) {
+    return lines.slice(1);
+  }
+
+  return ["Fragmento 1", "Fragmento 2", "Fragmento 3", "Fragmento 4", "Fragmento 5"];
+}
+
 function scoreQuestion(question: ExamQuestion, answer: string | string[] | undefined): ItemResult {
   const empty = answer === undefined || answer === "" || (Array.isArray(answer) && answer.every((value) => !value));
   if (empty) return { questionId: question.id, order: question.order, maxScore: question.maxScore, score: 0, status: "sin_respuesta", feedback: "No se registró una respuesta." };
   if (question.evaluationMethod === "ai") return { questionId: question.id, order: question.order, maxScore: question.maxScore, score: null, status: "pendiente_ia", feedback: "Respuesta enviada a evaluación con IA y revisión docente." };
   const expected = Array.isArray(question.correctAnswer) ? question.correctAnswer : [question.correctAnswer];
   const received = Array.isArray(answer) ? answer : [answer];
+
+  if (question.type === "clasificacion" && expected.length > 1) {
+    const total = expected.length;
+    let hits = 0;
+    expected.forEach((val, idx) => {
+      if (normalize(val) === normalize(received[idx])) hits += 1;
+    });
+    const score = Math.round((hits / total) * question.maxScore * 100) / 100;
+    const isFull = hits === total;
+    const isZero = hits === 0;
+    const feedback = isFull
+      ? "Clasificación completamente correcta."
+      : isZero
+        ? "Ningún elemento coincide con la clasificación correcta."
+        : `Clasificación parcial: ${hits} de ${total} aciertos (${score} de ${question.maxScore} pts).`;
+    return {
+      questionId: question.id,
+      order: question.order,
+      maxScore: question.maxScore,
+      score,
+      status: isFull ? "correcta" : isZero ? "incorrecta" : "correcta",
+      feedback,
+    };
+  }
+
   const correct = expected.length === received.length && expected.every((value, index) => normalize(value) === normalize(received[index]));
   return { questionId: question.id, order: question.order, maxScore: question.maxScore, score: correct ? question.maxScore : 0, status: correct ? "correcta" : "incorrecta", feedback: correct ? "Respuesta correcta." : "Revisa este concepto con tu docente." };
 }

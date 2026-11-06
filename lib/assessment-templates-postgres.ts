@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { getDatabase } from "../db/client.ts";
-import { assessmentTemplateQuestions, assessmentTemplates, auditEvents } from "../db/schema.ts";
+import { assessmentTemplateQuestions, assessmentTemplates, auditEvents, examAttempts, exams } from "../db/schema.ts";
 import { ExamAuthoringError, validateDraft } from "./exam-authoring-postgres.ts";
 
 export type AssessmentKind = "Examen" | "Actividad";
@@ -103,5 +103,149 @@ export async function approveAssessmentTemplateInPostgres(templateId: string) {
       details: { kind: template.kind, version: template.version },
     });
     return { templateId, status: "Aprobada" };
+  });
+}
+
+export async function deleteAssessmentTemplateDraftInPostgres(templateIdValue: string) {
+  const templateId = String(templateIdValue ?? "").trim();
+  if (!/^template-[0-9a-f-]{36}$/.test(templateId)) throw new ExamAuthoringError("Selecciona un borrador en prueba válido.");
+  return getDatabase().transaction(async (tx) => {
+    const [template] = await tx.select().from(assessmentTemplates)
+      .where(eq(assessmentTemplates.id, templateId)).for("update").limit(1);
+    if (!template) throw new ExamAuthoringError("No se encontró el borrador que deseas eliminar.", 404);
+    if (template.status !== "Borrador") {
+      throw new ExamAuthoringError("Sólo se pueden eliminar exámenes o actividades en prueba (estado Borrador) que aún no están formalizados.", 409);
+    }
+    const [assigned] = await tx.select({ id: exams.id }).from(exams)
+      .where(eq(exams.sourceTemplateId, templateId)).limit(1);
+    if (assigned) {
+      throw new ExamAuthoringError("No se puede eliminar porque esta evaluación ya tiene una asignación vinculada.", 409);
+    }
+    await tx.delete(assessmentTemplateQuestions).where(eq(assessmentTemplateQuestions.templateId, templateId));
+    await tx.delete(assessmentTemplates).where(and(eq(assessmentTemplates.id, templateId), eq(assessmentTemplates.status, "Borrador")));
+    const now = new Date().toISOString();
+    await tx.insert(auditEvents).values({
+      id: `event-${randomUUID()}`,
+      type: "assessment_template_deleted",
+      entity: "ASSESSMENT_TEMPLATES",
+      entityId: templateId,
+      actorId: "docente",
+      occurredAt: now,
+      details: { kind: template.kind, name: template.name, version: template.version, status: template.status },
+    });
+    return { templateId, kind: template.kind, name: template.name, version: template.version, deleted: true };
+  });
+}
+
+export async function updateAssessmentTemplatePolicyInPostgres(input: {
+  templateId?: unknown;
+  examId?: unknown;
+  timeMode?: unknown;
+  durationMinutes?: unknown;
+  lockOnFocusLoss?: unknown;
+}) {
+  const rawTemplateId = String(input.templateId ?? "").trim();
+  const rawExamId = String(input.examId ?? "").trim();
+  if (!rawTemplateId && !rawExamId) {
+    throw new ExamAuthoringError("Selecciona una evaluación o actividad válida.");
+  }
+  if (rawTemplateId && !/^template-[0-9a-f-]{36}$/.test(rawTemplateId)) {
+    throw new ExamAuthoringError("Selecciona una evaluación o actividad válida.");
+  }
+  const chosen = policy(input);
+  return getDatabase().transaction(async (tx) => {
+    let targetTemplateId = rawTemplateId;
+    if (!targetTemplateId && rawExamId) {
+      const [examRow] = await tx.select().from(exams).where(eq(exams.id, rawExamId)).for("update").limit(1);
+      if (!examRow) throw new ExamAuthoringError("No se encontró la actividad o evaluación asignada.", 404);
+      if (examRow.sourceTemplateId) targetTemplateId = examRow.sourceTemplateId;
+    }
+
+    let template: typeof assessmentTemplates.$inferSelect | undefined;
+    if (targetTemplateId) {
+      const [found] = await tx.select().from(assessmentTemplates)
+        .where(eq(assessmentTemplates.id, targetTemplateId)).for("update").limit(1);
+      if (!found) throw new ExamAuthoringError("No se encontró la evaluación o actividad que deseas editar.", 404);
+      template = found;
+    }
+
+    const now = new Date().toISOString();
+    if (template && targetTemplateId) {
+      await tx.update(assessmentTemplates).set({
+        timeMode: chosen.timeMode,
+        durationMinutes: chosen.durationMinutes,
+        lockOnFocusLoss: chosen.lockOnFocusLoss,
+        updatedAt: now,
+      }).where(eq(assessmentTemplates.id, targetTemplateId));
+    }
+
+    const linkedExams = targetTemplateId
+      ? await tx.select({ id: exams.id }).from(exams).where(eq(exams.sourceTemplateId, targetTemplateId))
+      : [];
+    const examIds = Array.from(new Set([
+      ...linkedExams.map((item) => item.id),
+      ...(rawExamId ? [rawExamId] : []),
+    ]));
+
+    if (examIds.length > 0) {
+      await tx.update(exams).set({
+        timeMode: chosen.timeMode,
+        durationMinutes: chosen.durationMinutes,
+        lockOnFocusLoss: chosen.lockOnFocusLoss,
+        requiresFullscreen: chosen.lockOnFocusLoss,
+        updatedAt: now,
+      }).where(inArray(exams.id, examIds));
+
+      const activeAttempts = await tx.select().from(examAttempts)
+        .where(and(inArray(examAttempts.examId, examIds), inArray(examAttempts.status, ["Activo", "Bloqueado"])));
+
+      for (const attempt of activeAttempts) {
+        const startMs = attempt.startedAt ? Date.parse(attempt.startedAt) : Date.parse(now);
+        const validStartMs = Number.isFinite(startMs) ? startMs : Date.parse(now);
+        const deadlineAt = chosen.timeMode === "Libre" || !chosen.durationMinutes
+          ? null
+          : new Date(validStartMs + chosen.durationMinutes * 60_000).toISOString();
+        const timeLimitMinutes = deadlineAt && chosen.durationMinutes ? String(chosen.durationMinutes) : null;
+        const shouldUnlock = !chosen.lockOnFocusLoss && (attempt.status === "Bloqueado" || attempt.locked);
+        await tx.update(examAttempts).set({
+          timeMode: chosen.timeMode,
+          lockOnFocusLoss: chosen.lockOnFocusLoss,
+          timeLimitMinutes,
+          deadlineAt,
+          ...(shouldUnlock ? { status: "Activo", locked: false, lockedAt: null } : {}),
+          updatedAt: now,
+        }).where(eq(examAttempts.id, attempt.id));
+      }
+    }
+
+    await tx.insert(auditEvents).values({
+      id: `event-${randomUUID()}`,
+      type: "assessment_template_policy_updated",
+      entity: targetTemplateId ? "ASSESSMENT_TEMPLATES" : "EXAMS",
+      entityId: targetTemplateId || rawExamId,
+      actorId: "docente",
+      occurredAt: now,
+      details: {
+        templateId: targetTemplateId || null,
+        examId: rawExamId || null,
+        kind: template?.kind ?? null,
+        name: template?.name ?? null,
+        version: template?.version ?? null,
+        status: template?.status ?? null,
+        next: chosen,
+        updatedExamsCount: examIds.length,
+      },
+    });
+
+    return {
+      templateId: targetTemplateId || null,
+      examId: rawExamId || null,
+      kind: template?.kind ?? null,
+      name: template?.name ?? null,
+      version: template?.version ?? null,
+      status: template?.status ?? null,
+      ...chosen,
+      updatedExamsCount: examIds.length,
+    };
   });
 }

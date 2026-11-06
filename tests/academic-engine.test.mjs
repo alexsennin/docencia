@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { calculateStudentPartial, mexicoToday } from "../lib/academic-engine.ts";
+import { evaluateAutomatic, extractClassificationItems } from "../lib/exam-engine.ts";
 
 const student = { id: "A1", grado: "1°", grupo: "A" };
 const partial = { parcial_id: "p1", modo_evaluacion_continua: "Promedio" };
@@ -165,4 +166,59 @@ test("trabajo en modalidad examen alimenta EC una sola vez y nunca EX", () => {
   const pending = calculateStudentPartial({ ...snapshot, attempts: base.attempts }, student, partial, now);
   assert.equal(pending.ec, null);
   assert.equal(pending.ex, 100);
+});
+
+test("extractClassificationItems extrae elementos numerados del prompt o fallback", () => {
+  const prompt1 = "Clasifica los textos: 1) Artículo escolar. 2) Refrán popular. 3) Pregón de mercado.";
+  assert.deepEqual(extractClassificationItems(prompt1), [
+    "Artículo escolar.",
+    "Refrán popular.",
+    "Pregón de mercado.",
+  ]);
+
+  const promptFallback = "Clasifica los elementos en las categorías correctas.";
+  assert.equal(extractClassificationItems(promptFallback).length, 5);
+});
+
+test("calificación de clasificación otorga puntaje proporcional por aciertos parciales", () => {
+  const exam = {
+    id: "test-exam",
+    name: "Examen de clasificación",
+    maxScore: 20,
+    questions: [
+      {
+        id: "q-class-1",
+        order: 1,
+        topic: "Géneros",
+        type: "clasificacion",
+        prompt: "Clasifica: 1) Texto A 2) Texto B 3) Texto C 4) Texto D",
+        options: [
+          { value: "A", label: "Opción A" },
+          { value: "B", label: "Opción B" },
+        ],
+        correctAnswer: ["A", "B", "A", "B"],
+        maxScore: 20,
+        evaluationMethod: "automatic",
+      },
+    ],
+  };
+
+  // 4 de 4 aciertos: 20 pts
+  const full = evaluateAutomatic(exam, { "q-class-1": ["A", "B", "A", "B"] }, "att-1", "A1");
+  assert.equal(full.automaticScore, 20);
+  assert.equal(full.items[0].score, 20);
+  assert.equal(full.items[0].status, "correcta");
+
+  // 3 de 4 aciertos: 15 pts (no 0 pts)
+  const partialResult = evaluateAutomatic(exam, { "q-class-1": ["A", "B", "A", "A"] }, "att-2", "A1");
+  assert.equal(partialResult.automaticScore, 15);
+  assert.equal(partialResult.items[0].score, 15);
+  assert.equal(partialResult.items[0].status, "correcta");
+  assert.match(partialResult.items[0].feedback, /Clasificación parcial: 3 de 4 aciertos/);
+
+  // 0 de 4 aciertos: 0 pts
+  const zeroResult = evaluateAutomatic(exam, { "q-class-1": ["B", "A", "B", "A"] }, "att-3", "A1");
+  assert.equal(zeroResult.automaticScore, 0);
+  assert.equal(zeroResult.items[0].score, 0);
+  assert.equal(zeroResult.items[0].status, "incorrecta");
 });

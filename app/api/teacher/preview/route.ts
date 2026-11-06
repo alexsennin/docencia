@@ -4,6 +4,8 @@ import { hasSheetsBridge, sheetsBridge } from "../../../../lib/sheets-bridge";
 import { hasTeacherSession } from "../../../../lib/teacher-auth";
 import { getDataBackend } from "../../../../lib/data-backend";
 import { getTeacherPreviewDefinitionInPostgres, listTeacherPreviewOptionsInPostgres } from "../../../../lib/assessment-preview-postgres";
+import { deleteAssessmentTemplateDraftInPostgres } from "../../../../lib/assessment-templates-postgres";
+import { ExamAuthoringError } from "../../../../lib/exam-authoring-postgres";
 import { evaluateOpenAnswerWithGeminiInPostgres } from "../../../../lib/exam-attempt-postgres";
 import type { AnswerMap, ExamDefinition } from "../../../../lib/exam-types";
 
@@ -71,4 +73,24 @@ export async function POST(request: Request) {
     }
     return Response.json({ result, preview: true }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return Response.json({ error: error instanceof Error ? error.message : "No se pudo evaluar la prueba." }, { status: 500 }); }
+}
+
+export async function DELETE(request: Request) {
+  if (!(await hasTeacherSession())) return Response.json({ error: "Acceso docente requerido." }, { status: 401 });
+  if (getDataBackend() !== "postgres") return Response.json({ error: "Los repositorios de evaluaciones requieren PostgreSQL." }, { status: 503 });
+  try {
+    const url = new URL(request.url);
+    let templateId = url.searchParams.get("examId") || url.searchParams.get("id") || "";
+    if (!templateId) {
+      const body = await request.json().catch(() => ({})) as { examId?: string; templateId?: string };
+      templateId = String(body.templateId ?? body.examId ?? "");
+    }
+    const result = await deleteAssessmentTemplateDraftInPostgres(templateId);
+    return Response.json({ result }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    return Response.json(
+      { error: error instanceof Error ? error.message : "No se pudo eliminar el borrador en prueba." },
+      { status: error instanceof ExamAuthoringError ? error.status : 500 },
+    );
+  }
 }

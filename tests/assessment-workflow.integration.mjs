@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { closeDatabaseForTests, getDatabase } from "../db/client.ts";
 import { academicPeriods, classSessions, examAttempts, exams, studentGrades, studentGroups, students, tasks } from "../db/schema.ts";
-import { saveAssessmentTemplateInPostgres, approveAssessmentTemplateInPostgres, getAssessmentTemplateInPostgres } from "../lib/assessment-templates-postgres.ts";
+import { saveAssessmentTemplateInPostgres, approveAssessmentTemplateInPostgres, getAssessmentTemplateInPostgres, deleteAssessmentTemplateDraftInPostgres } from "../lib/assessment-templates-postgres.ts";
 import { getTeacherPreviewDefinitionInPostgres, listTeacherPreviewOptionsInPostgres } from "../lib/assessment-preview-postgres.ts";
 import { evaluateAutomatic, toPublicExam } from "../lib/exam-engine.ts";
 import { assignAssessmentInPostgres } from "../lib/assessment-assignment-postgres.ts";
@@ -34,7 +34,7 @@ const snapshot = (exam, attempt, task) => ({
 
 after(async () => { await closeDatabaseForTests(); });
 
-test("un borrador incompleto se guarda, se reabre y se prueba sin crear intentos; aprobar exige contenido completo", async () => {
+test("un borrador incompleto se guarda, se reabre, se prueba o se elimina sin crear intentos; aprobar exige contenido completo y bloquea eliminación", async () => {
   const base = { name: "Actividad en revisión", instructions: "Responde.", grade: "1°", group: "TODOS",
     questions: [{ order: 1, topic: "Prueba", type: "opcion_multiple", prompt: "Elige la respuesta", options: ["Primera", "Segunda"],
       correctAnswer: null, maxScore: 100, evaluationMethod: "automatic", rubric: null }] };
@@ -54,7 +54,12 @@ test("un borrador incompleto se guarda, se reabre y se prueba sin crear intentos
   const fixed = await saveAssessmentTemplateInPostgres({ kind: "Actividad", draft: { ...base, questions: [{ ...base.questions[0], correctAnswer: "A" }] },
     sourceTemplateId: saved.templateId, timeMode: "Libre", lockOnFocusLoss: false });
   assert.equal(fixed.version, 2);
+  const deletedDraft = await deleteAssessmentTemplateDraftInPostgres(saved.templateId);
+  assert.equal(deletedDraft.deleted, true);
+  assert.equal((await listTeacherPreviewOptionsInPostgres()).some((item) => item.id === saved.templateId), false);
+  await assert.rejects(getAssessmentTemplateInPostgres(saved.templateId), /No se encontró/);
   await approveAssessmentTemplateInPostgres(fixed.templateId);
+  await assert.rejects(deleteAssessmentTemplateDraftInPostgres(fixed.templateId), /Sólo se pueden eliminar exámenes o actividades en prueba/);
   const ready = await getTeacherPreviewDefinitionInPostgres(fixed.templateId);
   assert.equal(evaluateAutomatic(ready, { [ready.questions[0].id]: "A" }, "preview", "docente").grade10, 10);
   assert.deepEqual(await db.select().from(examAttempts), before);

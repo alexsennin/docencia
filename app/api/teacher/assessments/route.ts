@@ -1,6 +1,6 @@
 import { getDataBackend } from "../../../../lib/data-backend";
 import { hasTeacherSession } from "../../../../lib/teacher-auth";
-import { approveAssessmentTemplateInPostgres, getAssessmentTemplateInPostgres, listAssessmentTemplatesInPostgres, saveAssessmentTemplateInPostgres, type AssessmentKind } from "../../../../lib/assessment-templates-postgres";
+import { approveAssessmentTemplateInPostgres, deleteAssessmentTemplateDraftInPostgres, getAssessmentTemplateInPostgres, listAssessmentTemplatesInPostgres, saveAssessmentTemplateInPostgres, updateAssessmentTemplatePolicyInPostgres, type AssessmentKind } from "../../../../lib/assessment-templates-postgres";
 import { ExamAuthoringError } from "../../../../lib/exam-authoring-postgres";
 
 export const dynamic = "force-dynamic";
@@ -40,8 +40,32 @@ export async function PATCH(request: Request) {
   if (!(await hasTeacherSession())) return Response.json({ error: "Acceso docente requerido." }, { status: 401 });
   const unavailable = gate(); if (unavailable) return unavailable;
   try {
-    const body = await request.json() as { templateId?: string };
-    const result = await approveAssessmentTemplateInPostgres(String(body.templateId ?? ""));
+    const body = await request.json() as {
+      action?: string;
+      templateId?: string;
+      examId?: string;
+      timeMode?: unknown;
+      durationMinutes?: unknown;
+      lockOnFocusLoss?: unknown;
+    };
+    const result = body.action === "updatePolicy" || body.timeMode !== undefined
+      ? await updateAssessmentTemplatePolicyInPostgres(body)
+      : await approveAssessmentTemplateInPostgres(String(body.templateId ?? ""));
+    return Response.json({ result }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) { return fail(error); }
+}
+
+export async function DELETE(request: Request) {
+  if (!(await hasTeacherSession())) return Response.json({ error: "Acceso docente requerido." }, { status: 401 });
+  const unavailable = gate(); if (unavailable) return unavailable;
+  try {
+    const url = new URL(request.url);
+    let templateId = url.searchParams.get("id") || "";
+    if (!templateId) {
+      const body = await request.json().catch(() => ({})) as { templateId?: string };
+      templateId = String(body.templateId ?? "");
+    }
+    const result = await deleteAssessmentTemplateDraftInPostgres(templateId);
     return Response.json({ result }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return fail(error); }
 }

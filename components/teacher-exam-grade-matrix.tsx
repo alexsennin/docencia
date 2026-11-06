@@ -4,11 +4,59 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ProgressOverlay } from "./progress-overlay";
 
 type ExamQuestion = { questionId: string; order: number; maxScore: number; prompt?: string };
-type MatrixExam = { examId: string; examName: string; partialId: string; grade: string; group: string; groups: string[]; questions: ExamQuestion[] };
+type MatrixExam = {
+  examId: string;
+  examName: string;
+  purpose?: string;
+  partialId: string;
+  grade: string;
+  group: string;
+  groups: string[];
+  timeMode?: string;
+  durationMinutes?: number;
+  lockOnFocusLoss?: boolean;
+  sourceTemplateId?: string | null;
+  questions: ExamQuestion[];
+};
 type Student = { studentId: string; studentName: string; grade: string; group: string };
 type Answer = { questionId: string; answer: string; score: number | null; manualScore?: number | null; feedback: string; status: string };
-type ExamAttempt = { attemptId: string; studentId: string; grade: string; group: string; examId: string; partialId: string; status: string; submissionState?: string; submittedAt: string; grade10?: number | null; manualGradeLocked?: boolean; manualGradeOnTen?: number | null; answers: Answer[] };
+type ExamAttempt = {
+  attemptId: string;
+  studentId: string;
+  grade: string;
+  group: string;
+  examId: string;
+  partialId: string;
+  status: string;
+  submissionState?: string;
+  submittedAt: string;
+  grade10?: number | null;
+  manualGradeLocked?: boolean;
+  manualGradeOnTen?: number | null;
+  answers: Answer[];
+};
 type MatrixResponse = { exams?: MatrixExam[]; students?: Student[]; results?: ExamAttempt[]; error?: string };
+
+type ScoreTarget = {
+  attemptId?: string;
+  studentId: string;
+  studentName: string;
+  examId: string;
+  examName: string;
+  answers: Answer[];
+  manualGradeLocked?: boolean;
+  manualGradeOnTen?: number | null;
+  grade10?: number | null;
+};
+
+type RevokeTarget = {
+  attemptId?: string;
+  studentId: string;
+  studentName: string;
+  examId: string;
+  examName: string;
+  purpose?: string;
+};
 
 const groupName = (student: Student) => `${student.grade} ${student.group}`.trim();
 const formatPoints = (score: number) => String(Number(score.toFixed(2)));
@@ -22,12 +70,22 @@ export function TeacherExamGradeMatrix({ active, partialId, partialName }: { act
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [selectedAttemptId, setSelectedAttemptId] = useState("");
-  const [scoreDialogAttemptId, setScoreDialogAttemptId] = useState("");
+
+  const [scoreTarget, setScoreTarget] = useState<ScoreTarget | null>(null);
   const [scoreDrafts, setScoreDrafts] = useState<Record<string, string>>({});
   const [scoreReason, setScoreReason] = useState("");
   const [manualGradeLocked, setManualGradeLocked] = useState(false);
   const [manualGradeDraft, setManualGradeDraft] = useState("");
+
   const [finalizeAttemptId, setFinalizeAttemptId] = useState("");
+  const [revokeTarget, setRevokeTarget] = useState<RevokeTarget | null>(null);
+
+  const [policyExam, setPolicyExam] = useState<MatrixExam | null>(null);
+  const [policyTimeMode, setPolicyTimeMode] = useState<"Estricto" | "Libre">("Estricto");
+  const [policyDurationMinutes, setPolicyDurationMinutes] = useState(50);
+  const [policyLockOnFocusLoss, setPolicyLockOnFocusLoss] = useState(true);
+  const [policySaving, setPolicySaving] = useState(false);
+
   const [actionAttemptId, setActionAttemptId] = useState("");
   const [actionMessage, setActionMessage] = useState("");
   const [expiryBusy, setExpiryBusy] = useState(false);
@@ -88,6 +146,7 @@ export function TeacherExamGradeMatrix({ active, partialId, partialName }: { act
     const response = await fetch(`/api/teacher/results?includeInProgress=true&kind=${kind}`, { cache: "no-store" });
     const body = await response.json() as MatrixResponse;
     if (!response.ok) throw new Error(body.error || "No se pudieron actualizar los resultados.");
+    setExams(Array.isArray(body.exams) ? body.exams : []);
     setResults(Array.isArray(body.results) ? body.results : []);
   }
 
@@ -104,13 +163,44 @@ export function TeacherExamGradeMatrix({ active, partialId, partialName }: { act
     finally { actionInFlight.current = false; setExpiryBusy(false); }
   }
 
-  async function saveManualScores(attempt: ExamAttempt, exam: MatrixExam) {
+  async function savePolicy(exam: MatrixExam) {
     if (actionInFlight.current) return;
     actionInFlight.current = true;
-    setActionAttemptId(attempt.attemptId);
+    setPolicySaving(true);
     setActionMessage("");
     try {
-      const answers = new Map(attempt.answers.map((answer) => [answer.questionId, answer]));
+      const response = await fetch("/api/teacher/assessments", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "updatePolicy",
+          examId: exam.examId,
+          templateId: exam.sourceTemplateId || undefined,
+          timeMode: policyTimeMode,
+          durationMinutes: policyTimeMode === "Libre" ? null : policyDurationMinutes,
+          lockOnFocusLoss: policyLockOnFocusLoss,
+        }),
+      });
+      const body = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(body.error || "No se pudo actualizar la configuración de tiempo y bloqueo.");
+      await reloadResults();
+      setPolicyExam(null);
+      setActionMessage("Configuración de tiempo y bloqueo actualizada correctamente.");
+    } catch (cause) {
+      setActionMessage(cause instanceof Error ? cause.message : "No se pudo actualizar la configuración.");
+    } finally {
+      actionInFlight.current = false;
+      setPolicySaving(false);
+    }
+  }
+
+  async function saveManualScores(target: ScoreTarget, exam: MatrixExam) {
+    if (actionInFlight.current) return;
+    actionInFlight.current = true;
+    setActionAttemptId(target.attemptId || `score-${target.studentId}`);
+    setActionMessage("");
+    try {
+      const answers = new Map(target.answers.map((answer) => [answer.questionId, answer]));
       const previous = new Map(exam.questions.map((question) => {
         const answer = answers.get(question.questionId);
         if (!answer) return [question.questionId, null] as const;
@@ -125,16 +215,70 @@ export function TeacherExamGradeMatrix({ active, partialId, partialName }: { act
       }
       const response = await fetch("/api/teacher/results/score", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ attemptId: attempt.attemptId, scores, reason: scoreReason, manualGradeLocked, manualGradeOnTen: manualGradeLocked ? Number(manualGradeDraft) : null }),
+        body: JSON.stringify({
+          attemptId: target.attemptId || undefined,
+          examId: target.examId,
+          studentId: target.studentId,
+          scores,
+          reason: scoreReason,
+          manualGradeLocked,
+          manualGradeOnTen: manualGradeLocked ? Number(manualGradeDraft) : null,
+        }),
       });
       const body = await response.json() as { error?: string; academicSyncPending?: boolean };
       if (!response.ok) throw new Error(body.error || "No se pudieron guardar los puntajes.");
       await reloadResults();
-      setScoreDialogAttemptId("");
+      setScoreTarget(null);
       setScoreReason("");
       setActionMessage(body.academicSyncPending ? "Calificación guardada; la actualización del parcial quedó pendiente." : "Calificación guardada y parcial actualizado.");
     } catch (cause) {
       setActionMessage(cause instanceof Error ? cause.message : "No se pudieron guardar los puntajes.");
+    } finally {
+      actionInFlight.current = false;
+      setActionAttemptId("");
+    }
+  }
+
+  async function unlockAttempt(attemptId: string) {
+    if (actionInFlight.current) return;
+    actionInFlight.current = true;
+    setActionAttemptId(`unlock-${attemptId}`);
+    setActionMessage("");
+    try {
+      const response = await fetch("/api/teacher/results/unlock", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ attemptId }),
+      });
+      const body = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(body.error || "No se pudo desbloquear el intento.");
+      await reloadResults();
+      setActionMessage("Intento desbloqueado correctamente. El alumno puede continuar su evaluación.");
+    } catch (cause) {
+      setActionMessage(cause instanceof Error ? cause.message : "No se pudo desbloquear el intento.");
+    } finally {
+      actionInFlight.current = false;
+      setActionAttemptId("");
+    }
+  }
+
+  async function revokeAttempt() {
+    if (!revokeTarget || actionInFlight.current) return;
+    actionInFlight.current = true;
+    setActionAttemptId(`revoke-${revokeTarget.studentId}`);
+    setActionMessage("");
+    try {
+      const response = await fetch("/api/admin/revoke-exam", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ studentId: revokeTarget.studentId, examId: revokeTarget.examId }),
+      });
+      const body = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(body.error || "No se pudo revocar la evaluación.");
+      await reloadResults();
+      const studentName = revokeTarget.studentName;
+      setRevokeTarget(null);
+      setActionMessage(`Evaluación revocada para ${studentName}. La asignación queda lista para un nuevo intento.`);
+    } catch (cause) {
+      setActionMessage(cause instanceof Error ? cause.message : "No se pudo revocar la evaluación.");
     } finally {
       actionInFlight.current = false;
       setActionAttemptId("");
@@ -178,94 +322,508 @@ export function TeacherExamGradeMatrix({ active, partialId, partialName }: { act
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ attemptId }),
       });
       const body = await response.json() as { error?: string; academicSyncPending?: boolean };
-      if (!response.ok) throw new Error(body.error || "No se pudo finalizar el examen.");
+      if (!response.ok) throw new Error(body.error || "No se pudo finalizar la evaluación.");
       await reloadResults();
       setFinalizeAttemptId("");
       setSelectedAttemptId(attemptId);
-      setActionMessage(body.academicSyncPending ? "Examen finalizado; la actualización del parcial quedó pendiente." : "Examen finalizado y calificación registrada.");
+      setActionMessage(body.academicSyncPending ? "Evaluación finalizada; la actualización del parcial quedó pendiente." : "Evaluación finalizada y calificación registrada.");
     } catch (cause) {
-      setActionMessage(cause instanceof Error ? cause.message : "No se pudo finalizar el examen.");
+      setActionMessage(cause instanceof Error ? cause.message : "No se pudo finalizar la evaluación.");
     } finally {
       actionInFlight.current = false;
       setActionAttemptId("");
     }
   }
 
-  return <section className="exam-grade-matrix-module" aria-label="Matriz de calificaciones de exámenes">
-    <div className="academic-toolbar session-context">
-      <label className="select-field"><span>Repositorio</span><select value={kind} onChange={(event) => { setKind(event.target.value as "Examen" | "Actividad"); setSelectedAttemptId(""); }}><option value="Examen">Exámenes</option><option value="Actividad">Trabajos</option></select></label>
-      <label className="select-field"><span>Grado y grupo</span><select value={group} onChange={(event) => { setGroup(event.target.value); setSelectedAttemptId(""); }} disabled={!groups.length || loading}>
-        {groups.length ? groups.map((item) => <option key={item}>{item}</option>) : <option value="">Sin grupos disponibles</option>}
-      </select></label>
-      <span className="result-count">{partialName || "Parcial sin seleccionar"}</span>
-      <button type="button" className="secondary-button" onClick={() => void closeExpired()} disabled={loading || expiryBusy || !!actionAttemptId}>Cerrar intentos vencidos</button>
-    </div>
-    {actionMessage && <p className="notice" role="status">{actionMessage}</p>}
-    {error && <p className="notice" role="alert">{error}</p>}
-    {!loading && !error && !groups.length && <div className="academic-card"><p className="dashboard-empty">No hay alumnos registrados para mostrar.</p></div>}
-    {!loading && !error && groups.length > 0 && !groupExams.length && <div className="academic-card"><p className="dashboard-empty">No hay {kind === "Examen" ? "exámenes" : "trabajos"} publicados para {group} en este parcial.</p></div>}
-    <div className="exam-grade-matrix-list">
-      {groupExams.map((exam) => {
-        const attempts = latestAttemptsFor(exam.examId);
-        const selectedAttempt = [...attempts.values()].find((attempt) => attempt.attemptId === selectedAttemptId);
-        const selectedStudent = groupStudents.find((student) => student.studentId === selectedAttempt?.studentId);
-        const scoreAttempt = [...attempts.values()].find((attempt) => attempt.attemptId === scoreDialogAttemptId);
-        const scoreStudent = groupStudents.find((student) => student.studentId === scoreAttempt?.studentId);
-        const finalizeTarget = [...attempts.values()].find((attempt) => attempt.attemptId === finalizeAttemptId);
-        const finalizeStudent = groupStudents.find((student) => student.studentId === finalizeTarget?.studentId);
-        const selectedAnswers = new Map((selectedAttempt?.answers ?? []).map((answer) => [answer.questionId, answer]));
-        return <section className="academic-card exam-grade-matrix-card" key={exam.examId} aria-label={`Matriz de ${exam.examName}`}>
-          <div className="academic-matrix-header"><div><p className="eyebrow">{group} · {partialName}</p><h2>{exam.examName}</h2></div><span className="result-count">{exam.questions.length} preguntas · {attempts.size} con intento</span></div>
-          {!exam.questions.length ? <p className="dashboard-empty">Este examen no tiene preguntas activas.</p> : <div className="matrix-scroll"><table className="academic-matrix exam-grade-matrix-table"><thead><tr><th>ID</th><th>Nombre del alumno</th><th>Estado y detalle</th><th>Calificación obtenida</th>{exam.questions.map((question) => <th key={question.questionId} title={question.prompt || question.questionId}>P{question.order}</th>)}</tr></thead><tbody>
-            {groupStudents.map((student) => {
-              const attempt = attempts.get(student.studentId);
-              const answers = new Map((attempt?.answers ?? []).map((answer) => [answer.questionId, answer]));
-              const completed = attempt?.status === "Definitivo" || attempt?.status === "Provisional";
-              const pendingAiCount = attempt?.answers.filter((answer) => answer.status.toLowerCase() === "pendiente" && answer.answer.trim()).length ?? 0;
-              const canReevaluate = !!attempt && attempt.status === "Provisional" && pendingAiCount > 0 && !attempt.manualGradeLocked;
-              return <tr key={student.studentId} className="exam-grade-matrix-row"><td>{student.studentId}</td><th scope="row">{student.studentName}</th><td className="exam-matrix-status-cell"><span className="exam-matrix-state-label">Estado del intento</span><strong className="exam-matrix-state">{attempt ? attempt.submissionState || attempt.status : "Sin intento"}</strong><div className="exam-matrix-actions">{attempt && <button type="button" className="text-button" id={`exam-detail-trigger-${attempt.attemptId}`} aria-label={`Ver respuestas de ${student.studentName} en ${exam.examName}`} aria-expanded={selectedAttemptId === attempt.attemptId} aria-controls={`exam-detail-${exam.examId}`} onClick={() => setSelectedAttemptId(attempt.attemptId)}>Ver respuestas</button>}{attempt && completed && <button type="button" className="text-button" onClick={() => {
-                const answers = new Map(attempt.answers.map((answer) => [answer.questionId, answer]));
-                setScoreDrafts(Object.fromEntries(exam.questions.map((question) => {
-                  const answer = answers.get(question.questionId);
-                  const savedScore = answer?.manualScore ?? answer?.score;
-                  return [question.questionId, String(savedScore ?? (answer ? answer.answer.trim() ? "" : "0" : ""))];
-                })));
-                setScoreReason(""); setManualGradeLocked(!!attempt.manualGradeLocked); setManualGradeDraft(String(attempt.manualGradeOnTen ?? attempt.grade10 ?? "")); setScoreDialogAttemptId(attempt.attemptId);
-              }}>Editar calificación</button>}{canReevaluate && attempt && <button type="button" className="text-button" disabled={!!actionAttemptId} onClick={() => void reevaluatePending(attempt)}>{actionAttemptId === attempt.attemptId ? "Re-evaluando…" : `Re-evaluar (${pendingAiCount})`}</button>}{attempt && !completed && <button type="button" className="text-button" onClick={() => setFinalizeAttemptId(attempt.attemptId)}>Finalizar examen</button>}{!attempt && <span>—</span>}</div></td><td className="exam-matrix-final-score">{!attempt ? "—" : attempt.grade10 == null ? "Pendiente" : <>{formatPoints(attempt.grade10)} / 10{attempt.manualGradeLocked && <small className="exam-manual-grade-badge">Manual</small>}</>}</td>{exam.questions.map((question) => {
-                const answer = answers.get(question.questionId);
-                const grade = !answer ? "—" : !completed ? "Sin evaluar" : answer.score === null
-                  ? "Pendiente de evaluación"
-                  : `${formatPoints(answer.score)} / ${formatPoints(question.maxScore)}`;
-                return <td key={question.questionId} title={answer?.status || (attempt ? "Sin respuesta guardada" : "Sin intento")}><div className="exam-matrix-answer-line"><span className="exam-matrix-answer">{answer ? answer.answer || "Sin respuesta" : "—"}</span>{answer && <small className="exam-matrix-score">, {grade.replace(/\s*\/\s*/g, "/")}</small>}</div></td>;
-              })}</tr>;
-            })}
-          </tbody></table></div>}
-          {selectedAttempt && selectedStudent && !loading && <section className="report-detail" id={`exam-detail-${exam.examId}`} aria-labelledby={`exam-detail-title-${exam.examId}`}>
-            <button className="text-button" type="button" onClick={() => {
-              setSelectedAttemptId("");
-              document.getElementById(`exam-detail-trigger-${selectedAttempt.attemptId}`)?.focus();
-            }}>Cerrar detalle</button>
-            <h3 ref={detailHeading} tabIndex={-1} id={`exam-detail-title-${exam.examId}`}>{selectedStudent.studentName} · {exam.examName}</h3>
-            <p>{group} · {partialName} · {selectedAttempt.submissionState || selectedAttempt.status} · {selectedAttempt.grade10 == null ? "Sin calificación final" : `${formatPoints(selectedAttempt.grade10)} / 10`}</p>
-            <div className="result-items">{exam.questions.map((question) => {
-              const answer = selectedAnswers.get(question.questionId);
-              return <div className="result-item" key={question.questionId}>
-                <strong>Pregunta {question.order}</strong><span>{answer?.status || (answer ? "Registrada" : "Sin respuesta registrada")}</span>
-                <b>{selectedAttempt.status !== "Definitivo" && selectedAttempt.status !== "Provisional" ? "Sin evaluar" : !answer || answer.score === null ? "Pendiente de evaluación" : `${formatPoints(answer.score)} / ${formatPoints(question.maxScore)} puntos`}</b>
-                {question.prompt && <small>{question.prompt}</small>}
-                <small className="exam-answer-text">Respuesta: {answer?.answer || "Sin respuesta"}</small>
-                {answer?.feedback && <small className="exam-answer-text">Retroalimentación: {answer.feedback}</small>}
-              </div>;
-            })}</div>
-          </section>}
-          {scoreAttempt && scoreStudent && <div className="academic-dialog-backdrop" role="presentation"><section className="academic-dialog exam-score-dialog" role="dialog" aria-modal="true" aria-labelledby={`exam-score-title-${exam.examId}`}><button type="button" className="dialog-close" aria-label="Cerrar" onClick={() => setScoreDialogAttemptId("")}>×</button><p className="eyebrow">AJUSTE DOCENTE POR ALUMNO</p><h3 id={`exam-score-title-${exam.examId}`}>Editar calificación</h3><p>{scoreStudent.studentName} · {exam.examName}</p><p>La calificación final puede fijarse manualmente sin modificar los puntajes de los reactivos. Al fijarla, este intento queda excluido de futuras reevaluaciones con IA.</p><label className="exam-manual-grade-toggle"><input type="checkbox" checked={manualGradeLocked} onChange={(event) => setManualGradeLocked(event.target.checked)} /><span>Fijar calificación final manualmente y omitir reevaluación de este examen</span></label><label className="exam-manual-grade-field"><span>Calificación final del examen</span><span className="exam-score-input"><input aria-label="Calificación final del examen" type="number" min="0" max="10" step="0.01" inputMode="decimal" value={manualGradeDraft} disabled={!manualGradeLocked} onChange={(event) => setManualGradeDraft(event.target.value)} /><small>/ 10</small></span></label><div className="exam-score-editor">{exam.questions.map((question) => { const answer = scoreAttempt.answers.find((item) => item.questionId === question.questionId); return <label key={question.questionId}><span><strong>Pregunta {question.order}</strong><small>{answer?.answer.trim() ? answer.answer : "Sin respuesta registrada; puedes asignar puntos manualmente."}</small></span><span className="exam-score-input"><input aria-label={`Puntaje de pregunta ${question.order}`} type="number" min="0" max={question.maxScore} step="0.01" inputMode="decimal" value={scoreDrafts[question.questionId] ?? "0"} onChange={(event) => setScoreDrafts((current) => ({ ...current, [question.questionId]: event.target.value }))} /><small>/ {formatPoints(question.maxScore)} puntos</small></span></label>; })}</div><label className="exam-score-reason"><span>Motivo del ajuste</span><textarea required maxLength={500} value={scoreReason} onChange={(event) => setScoreReason(event.target.value)} /></label><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setScoreDialogAttemptId("")} disabled={!!actionAttemptId}>Cancelar</button><button type="button" className="primary-button" onClick={() => void saveManualScores(scoreAttempt, exam)} disabled={!!actionAttemptId || !scoreReason.trim() || manualGradeLocked && (!manualGradeDraft.trim() || Number(manualGradeDraft) < 0 || Number(manualGradeDraft) > 10)}>{actionAttemptId === scoreAttempt.attemptId ? "Guardando…" : "Guardar calificación"}</button></div></section></div>}
-          {finalizeTarget && finalizeStudent && <div className="academic-dialog-backdrop" role="presentation"><section className="academic-dialog" role="dialog" aria-modal="true" aria-labelledby={`exam-finalize-title-${exam.examId}`}><button type="button" className="dialog-close" aria-label="Cerrar" onClick={() => setFinalizeAttemptId("")}>×</button><p className="eyebrow">CIERRE DE INTENTO</p><h3 id={`exam-finalize-title-${exam.examId}`}>Finalizar examen</h3><p>{finalizeStudent.studentName} · {exam.examName}</p><p>Se procesarán las respuestas que quedaron guardadas para este intento. Las preguntas sin respuesta se registrarán como no contestadas; las respuestas abiertas guardadas se enviarán a evaluación con IA.</p><p><strong>{finalizeTarget.answers.filter((answer) => answer.answer.trim()).length} respuestas guardadas</strong> · {exam.questions.length - finalizeTarget.answers.filter((answer) => answer.answer.trim()).length} sin respuesta</p><div className="dialog-actions"><button type="button" className="secondary-button" onClick={() => setFinalizeAttemptId("")} disabled={!!actionAttemptId}>Cancelar</button><button type="button" className="primary-button" onClick={() => void submitFinalization(finalizeTarget.attemptId)} disabled={!!actionAttemptId}>{actionAttemptId === finalizeTarget.attemptId ? "Finalizando…" : "Finalizar examen"}</button></div></section></div>}
-          {!groupStudents.length && <p className="dashboard-empty">No hay alumnos en este grupo.</p>}
-        </section>;
-      })}
-    </div>
-    {loading && <ProgressOverlay title="Consultando matriz de exámenes…" detail="Cargamos los reactivos, alumnos y calificaciones registradas para este parcial." />}
-    {expiryBusy && <ProgressOverlay title="Cerrando intentos vencidos…" detail="Guardamos y evaluamos las respuestas recibidas antes del límite de tiempo." />}
-    {actionAttemptId && <ProgressOverlay title={actionAttemptId === finalizeAttemptId ? "Finalizando examen…" : scoreDialogAttemptId === actionAttemptId ? "Guardando calificación…" : "Re-evaluando respuestas pendientes…"} detail="Procesamos la acción del alumno seleccionado y actualizamos su resultado." />}
-  </section>;
+  const finalizeAttempt = useMemo(() => results.find((a) => a.attemptId === finalizeAttemptId), [results, finalizeAttemptId]);
+  const finalizeStudent = useMemo(() => students.find((s) => s.studentId === finalizeAttempt?.studentId), [students, finalizeAttempt]);
+
+  return (
+    <section className="exam-grade-matrix-module" aria-label="Matriz de calificaciones de evaluaciones">
+      <div className="academic-toolbar session-context">
+        <label className="select-field">
+          <span>Repositorio</span>
+          <select value={kind} onChange={(event) => { setKind(event.target.value as "Examen" | "Actividad"); setSelectedAttemptId(""); }}>
+            <option value="Examen">Exámenes</option>
+            <option value="Actividad">Trabajos con evaluación</option>
+          </select>
+        </label>
+        <label className="select-field">
+          <span>Grado y grupo</span>
+          <select value={group} onChange={(event) => { setGroup(event.target.value); setSelectedAttemptId(""); }} disabled={!groups.length || loading}>
+            {groups.length ? groups.map((item) => <option key={item}>{item}</option>) : <option value="">Sin grupos disponibles</option>}
+          </select>
+        </label>
+        <span className="result-count">{partialName || "Parcial sin seleccionar"}</span>
+        <button type="button" className="secondary-button" onClick={() => void closeExpired()} disabled={loading || expiryBusy || !!actionAttemptId}>
+          Cerrar intentos vencidos
+        </button>
+      </div>
+
+      {actionMessage && <p className="notice" role="status">{actionMessage}</p>}
+      {error && <p className="notice" role="alert">{error}</p>}
+      {!loading && !error && !groups.length && <div className="academic-card"><p className="dashboard-empty">No hay alumnos registrados para mostrar.</p></div>}
+      {!loading && !error && groups.length > 0 && !groupExams.length && (
+        <div className="academic-card"><p className="dashboard-empty">No hay {kind === "Examen" ? "exámenes" : "trabajos"} publicados para {group} en este parcial.</p></div>
+      )}
+
+      <div className="exam-grade-matrix-list">
+        {groupExams.map((exam) => {
+          const attempts = latestAttemptsFor(exam.examId);
+          const selectedAttempt = [...attempts.values()].find((attempt) => attempt.attemptId === selectedAttemptId);
+          const selectedStudent = groupStudents.find((student) => student.studentId === selectedAttempt?.studentId);
+          const selectedAnswers = new Map((selectedAttempt?.answers ?? []).map((answer) => [answer.questionId, answer]));
+
+          return (
+            <section className="academic-card exam-grade-matrix-card" key={exam.examId} aria-label={`Matriz de ${exam.examName}`}>
+              <div className="academic-matrix-header">
+                <div>
+                  <p className="eyebrow">{group} · {partialName} · {exam.purpose ?? kind}</p>
+                  <h2>{exam.examName}</h2>
+                  <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "0.35rem", flexWrap: "wrap" }}>
+                    <span style={{ fontSize: "0.82rem", background: "#f1f5f9", padding: "0.15rem 0.5rem", borderRadius: "999px", color: "#334155" }}>
+                      ⏱️ {exam.timeMode === "Libre" ? "Modo Libre" : `${exam.durationMinutes ?? 50} min`}
+                    </span>
+                    <span style={{ fontSize: "0.82rem", background: "#f1f5f9", padding: "0.15rem 0.5rem", borderRadius: "999px", color: "#334155" }}>
+                      🔒 Bloqueo: {exam.lockOnFocusLoss ? "Activo" : "Desactivado"}
+                    </span>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      style={{ padding: "0.2rem 0.55rem", fontSize: "0.8rem", borderRadius: "6px" }}
+                      onClick={() => {
+                        setPolicyExam(exam);
+                        setPolicyTimeMode((exam.timeMode as "Estricto" | "Libre") || "Estricto");
+                        setPolicyDurationMinutes(exam.durationMinutes ?? 50);
+                        setPolicyLockOnFocusLoss(exam.lockOnFocusLoss ?? true);
+                      }}
+                    >
+                      Editar tiempo y bloqueo
+                    </button>
+                  </div>
+                </div>
+                <span className="result-count">{exam.questions.length} preguntas · {attempts.size} con intento</span>
+              </div>
+
+              {!exam.questions.length ? (
+                <p className="dashboard-empty">Esta evaluación no tiene preguntas activas.</p>
+              ) : (
+                <div className="matrix-scroll">
+                  <table className="academic-matrix exam-grade-matrix-table">
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>Nombre del alumno</th>
+                        <th>Estado y acciones</th>
+                        <th>Calificación</th>
+                        {exam.questions.map((question) => (
+                          <th key={question.questionId} title={question.prompt || question.questionId}>P{question.order}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {groupStudents.map((student) => {
+                        const attempt = attempts.get(student.studentId);
+                        const answers = new Map((attempt?.answers ?? []).map((answer) => [answer.questionId, answer]));
+                        const completed = attempt?.status === "Definitivo" || attempt?.status === "Provisional";
+                        const pendingAiCount = attempt?.answers.filter((answer) => answer.status.toLowerCase() === "pendiente" && answer.answer.trim()).length ?? 0;
+                        const canReevaluate = !!attempt && attempt.status === "Provisional" && pendingAiCount > 0 && !attempt.manualGradeLocked;
+
+                        return (
+                          <tr key={student.studentId} className="exam-grade-matrix-row">
+                            <td>{student.studentId}</td>
+                            <th scope="row">{student.studentName}</th>
+                            <td className="exam-matrix-status-cell">
+                              <span className="exam-matrix-state-label">Estado</span>
+                              <strong className="exam-matrix-state">{attempt ? attempt.submissionState || attempt.status : "Sin intento"}</strong>
+                              <div className="exam-matrix-actions">
+                                {attempt && (
+                                  <button
+                                    type="button"
+                                    className="text-button"
+                                    id={`exam-detail-trigger-${attempt.attemptId}`}
+                                    aria-label={`Ver respuestas de ${student.studentName} en ${exam.examName}`}
+                                    aria-expanded={selectedAttemptId === attempt.attemptId}
+                                    aria-controls={`exam-detail-${exam.examId}`}
+                                    onClick={() => setSelectedAttemptId(attempt.attemptId)}
+                                  >
+                                    Ver respuestas
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  className="text-button"
+                                  onClick={() => {
+                                    const aMap = new Map((attempt?.answers ?? []).map((a) => [a.questionId, a]));
+                                    setScoreDrafts(Object.fromEntries(exam.questions.map((q) => {
+                                      const ans = aMap.get(q.questionId);
+                                      const s = ans?.manualScore ?? ans?.score;
+                                      return [q.questionId, String(s ?? (ans ? ans.answer.trim() ? "" : "0" : ""))];
+                                    })));
+                                    setScoreReason("");
+                                    setManualGradeLocked(!!attempt?.manualGradeLocked);
+                                    setManualGradeDraft(String(attempt?.manualGradeOnTen ?? attempt?.grade10 ?? ""));
+                                    setScoreTarget({
+                                      attemptId: attempt?.attemptId,
+                                      studentId: student.studentId,
+                                      studentName: student.studentName,
+                                      examId: exam.examId,
+                                      examName: exam.examName,
+                                      answers: attempt?.answers ?? [],
+                                      manualGradeLocked: attempt?.manualGradeLocked,
+                                      manualGradeOnTen: attempt?.manualGradeOnTen,
+                                      grade10: attempt?.grade10,
+                                    });
+                                  }}
+                                >
+                                  {attempt && completed ? "Editar calificación" : attempt ? "Calificar intento" : "Asignar calificación"}
+                                </button>
+                                {attempt?.status === "Bloqueado" && (
+                                  <button
+                                    type="button"
+                                    className="text-button"
+                                    disabled={!!actionAttemptId}
+                                    onClick={() => void unlockAttempt(attempt.attemptId)}
+                                  >
+                                    {actionAttemptId === `unlock-${attempt.attemptId}` ? "Desbloqueando…" : "Desbloquear intento"}
+                                  </button>
+                                )}
+                                {canReevaluate && attempt && (
+                                  <button
+                                    type="button"
+                                    className="text-button"
+                                    disabled={!!actionAttemptId}
+                                    onClick={() => void reevaluatePending(attempt)}
+                                  >
+                                    {actionAttemptId === attempt.attemptId ? "Re-evaluando…" : `Re-evaluar (${pendingAiCount})`}
+                                  </button>
+                                )}
+                                {attempt && !completed && (
+                                  <button
+                                    type="button"
+                                    className="text-button"
+                                    onClick={() => setFinalizeAttemptId(attempt.attemptId)}
+                                  >
+                                    Finalizar {exam.purpose?.toLowerCase() ?? "evaluación"}
+                                  </button>
+                                )}
+                                {attempt && (
+                                  <button
+                                    type="button"
+                                    className="text-button text-button-danger"
+                                    onClick={() => setRevokeTarget({
+                                      attemptId: attempt.attemptId,
+                                      studentId: student.studentId,
+                                      studentName: student.studentName,
+                                      examId: exam.examId,
+                                      examName: exam.examName,
+                                      purpose: exam.purpose ?? kind,
+                                    })}
+                                  >
+                                    Revocar
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                            <td className="exam-matrix-final-score">
+                              {!attempt ? (
+                                "—"
+                              ) : attempt.grade10 == null ? (
+                                "Pendiente"
+                              ) : (
+                                <>
+                                  {formatPoints(attempt.grade10)} / 10
+                                  {attempt.manualGradeLocked && <small className="exam-manual-grade-badge">Manual</small>}
+                                </>
+                              )}
+                            </td>
+                            {exam.questions.map((question) => {
+                              const answer = answers.get(question.questionId);
+                              const grade = !answer ? "—" : !completed ? "Sin evaluar" : answer.score === null
+                                ? "Pendiente"
+                                : `${formatPoints(answer.score)} / ${formatPoints(question.maxScore)}`;
+                              return (
+                                <td key={question.questionId} title={answer?.status || (attempt ? "Sin respuesta guardada" : "Sin intento")}>
+                                  <div className="exam-matrix-answer-line">
+                                    <span className="exam-matrix-answer">{answer ? answer.answer || "Sin respuesta" : "—"}</span>
+                                    {answer && <small className="exam-matrix-score">, {grade.replace(/\s*\/\s*/g, "/")}</small>}
+                                  </div>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {selectedAttempt && selectedStudent && !loading && (
+                <section className="report-detail" id={`exam-detail-${exam.examId}`} aria-labelledby={`exam-detail-title-${exam.examId}`}>
+                  <button
+                    className="text-button"
+                    type="button"
+                    onClick={() => {
+                      setSelectedAttemptId("");
+                      document.getElementById(`exam-detail-trigger-${selectedAttempt.attemptId}`)?.focus();
+                    }}
+                  >
+                    Cerrar detalle
+                  </button>
+                  <h3 ref={detailHeading} tabIndex={-1} id={`exam-detail-title-${exam.examId}`}>{selectedStudent.studentName} · {exam.examName}</h3>
+                  <p>{group} · {partialName} · {selectedAttempt.submissionState || selectedAttempt.status} · {selectedAttempt.grade10 == null ? "Sin calificación final" : `${formatPoints(selectedAttempt.grade10)} / 10`}</p>
+                  <div className="result-items">
+                    {exam.questions.map((question) => {
+                      const answer = selectedAnswers.get(question.questionId);
+                      return (
+                        <div className="result-item" key={question.questionId}>
+                          <strong>Pregunta {question.order}</strong>
+                          <span>{answer?.status || (answer ? "Registrada" : "Sin respuesta registrada")}</span>
+                          <b>{selectedAttempt.status !== "Definitivo" && selectedAttempt.status !== "Provisional" ? "Sin evaluar" : !answer || answer.score === null ? "Pendiente de evaluación" : `${formatPoints(answer.score)} / ${formatPoints(question.maxScore)} puntos`}</b>
+                          {question.prompt && <small>{question.prompt}</small>}
+                          <small className="exam-answer-text">Respuesta: {answer?.answer || "Sin respuesta"}</small>
+                          {answer?.feedback && <small className="exam-answer-text">Retroalimentación: {answer.feedback}</small>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
+            </section>
+          );
+        })}
+      </div>
+
+      {/* Modal: Editar tiempo y bloqueo */}
+      {policyExam && (
+        <div className="academic-dialog-backdrop" role="presentation">
+          <section className="academic-dialog" role="dialog" aria-modal="true" aria-labelledby="policy-dialog-title">
+            <button type="button" className="dialog-close" aria-label="Cerrar" onClick={() => setPolicyExam(null)}>×</button>
+            <p className="eyebrow">POLÍTICA DE APLICACIÓN</p>
+            <h3 id="policy-dialog-title">Tiempo y bloqueo de pantalla</h3>
+            <p><strong>{policyExam.examName}</strong> ({policyExam.purpose ?? kind})</p>
+            <p style={{ fontSize: "0.85rem", color: "#64748b" }}>
+              Los cambios se aplican de inmediato al repositorio, a las asignaciones de los alumnos y a los intentos activos o bloqueados.
+            </p>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem", marginTop: "1rem" }}>
+              <label className="select-field">
+                <span>Modo de tiempo</span>
+                <select
+                  value={policyTimeMode}
+                  onChange={(e) => setPolicyTimeMode(e.target.value as "Estricto" | "Libre")}
+                >
+                  <option value="Estricto">Estricto (con temporizador y fecha límite)</option>
+                  <option value="Libre">Libre (sin límite de tiempo de sesión)</option>
+                </select>
+              </label>
+
+              {policyTimeMode === "Estricto" && (
+                <label className="select-field">
+                  <span>Duración máxima (minutos)</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={240}
+                    value={policyDurationMinutes}
+                    onChange={(e) => setPolicyDurationMinutes(Math.max(1, Math.min(240, Number(e.target.value) || 50)))}
+                  />
+                </label>
+              )}
+
+              <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", cursor: "pointer", fontSize: "0.9rem" }}>
+                <input
+                  type="checkbox"
+                  checked={policyLockOnFocusLoss}
+                  onChange={(e) => setPolicyLockOnFocusLoss(e.target.checked)}
+                />
+                <span>Bloquear examen si el alumno sale de la pestaña o pierde el foco</span>
+              </label>
+            </div>
+
+            <div className="dialog-actions" style={{ marginTop: "1.5rem" }}>
+              <button type="button" className="secondary-button" onClick={() => setPolicyExam(null)} disabled={policySaving}>
+                Cancelar
+              </button>
+              <button type="button" className="primary-button" onClick={() => void savePolicy(policyExam)} disabled={policySaving}>
+                {policySaving ? "Guardando…" : "Guardar cambios"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {/* Modal: Editar calificación */}
+      {scoreTarget && (
+        <div className="academic-dialog-backdrop" role="presentation">
+          <section className="academic-dialog exam-score-dialog" role="dialog" aria-modal="true" aria-labelledby="score-dialog-title">
+            <button type="button" className="dialog-close" aria-label="Cerrar" onClick={() => setScoreTarget(null)}>×</button>
+            <p className="eyebrow">AJUSTE DOCENTE DE CALIFICACIÓN</p>
+            <h3 id="score-dialog-title">Editar calificación</h3>
+            <p><strong>{scoreTarget.studentName}</strong> · {scoreTarget.examName}</p>
+            <p>La calificación final puede fijarse manualmente sobre 10 sin modificar los puntajes de los reactivos, o puedes asignar puntos por pregunta. Al fijarla, este intento queda excluido de futuras reevaluaciones con IA.</p>
+
+            <label className="exam-manual-grade-toggle">
+              <input
+                type="checkbox"
+                checked={manualGradeLocked}
+                onChange={(event) => setManualGradeLocked(event.target.checked)}
+              />
+              <span>Fijar calificación final manualmente y omitir reevaluación</span>
+            </label>
+
+            <label className="exam-manual-grade-field">
+              <span>Calificación final sobre 10</span>
+              <span className="exam-score-input">
+                <input
+                  aria-label="Calificación final sobre 10"
+                  type="number"
+                  min="0"
+                  max="10"
+                  step="0.01"
+                  inputMode="decimal"
+                  value={manualGradeDraft}
+                  disabled={!manualGradeLocked}
+                  onChange={(event) => setManualGradeDraft(event.target.value)}
+                />
+                <small>/ 10</small>
+              </span>
+            </label>
+
+            {groupExams.find((e) => e.examId === scoreTarget.examId)?.questions.length ? (
+              <div className="exam-score-editor">
+                {groupExams.find((e) => e.examId === scoreTarget.examId)!.questions.map((question) => {
+                  const answer = scoreTarget.answers.find((item) => item.questionId === question.questionId);
+                  return (
+                    <label key={question.questionId}>
+                      <span>
+                        <strong>Pregunta {question.order}</strong>
+                        <small>{answer?.answer.trim() ? answer.answer : "Sin respuesta registrada; puedes asignar puntos manualmente."}</small>
+                      </span>
+                      <span className="exam-score-input">
+                        <input
+                          aria-label={`Puntaje de pregunta ${question.order}`}
+                          type="number"
+                          min="0"
+                          max={question.maxScore}
+                          step="0.01"
+                          inputMode="decimal"
+                          value={scoreDrafts[question.questionId] ?? "0"}
+                          onChange={(event) => setScoreDrafts((current) => ({ ...current, [question.questionId]: event.target.value }))}
+                        />
+                        <small>/ {formatPoints(question.maxScore)} pts</small>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            ) : null}
+
+            <label className="exam-score-reason">
+              <span>Motivo del ajuste (obligatorio)</span>
+              <textarea
+                required
+                maxLength={500}
+                placeholder="Indica el motivo por el cual se asigna o ajusta la calificación…"
+                value={scoreReason}
+                onChange={(event) => setScoreReason(event.target.value)}
+              />
+            </label>
+
+            <div className="dialog-actions">
+              <button type="button" className="secondary-button" onClick={() => setScoreTarget(null)} disabled={!!actionAttemptId}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => {
+                  const exam = groupExams.find((e) => e.examId === scoreTarget.examId);
+                  if (exam) void saveManualScores(scoreTarget, exam);
+                }}
+                disabled={
+                  !!actionAttemptId ||
+                  !scoreReason.trim() ||
+                  (manualGradeLocked && (!manualGradeDraft.trim() || Number(manualGradeDraft) < 0 || Number(manualGradeDraft) > 10))
+                }
+              >
+                {actionAttemptId ? "Guardando…" : "Guardar calificación"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {/* Modal: Confirmación de finalización */}
+      {finalizeAttemptId && finalizeStudent && (
+        <div className="academic-dialog-backdrop" role="presentation">
+          <section className="academic-dialog" role="dialog" aria-modal="true" aria-labelledby="finalize-dialog-title">
+            <button type="button" className="dialog-close" aria-label="Cerrar" onClick={() => setFinalizeAttemptId("")}>×</button>
+            <p className="eyebrow">CIERRE DE INTENTO</p>
+            <h3 id="finalize-dialog-title">Finalizar evaluación</h3>
+            <p><strong>{finalizeStudent.studentName}</strong></p>
+            <p>Se procesarán las respuestas que quedaron guardadas para este intento. Las preguntas sin respuesta se registrarán como no contestadas; las respuestas abiertas guardadas se enviarán a evaluación con IA.</p>
+            <div className="dialog-actions">
+              <button type="button" className="secondary-button" onClick={() => setFinalizeAttemptId("")} disabled={!!actionAttemptId}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => void submitFinalization(finalizeAttemptId)}
+                disabled={!!actionAttemptId}
+              >
+                {actionAttemptId === finalizeAttemptId ? "Finalizando…" : "Finalizar evaluación"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {/* Modal: Confirmación de revocación */}
+      {revokeTarget && (
+        <div className="academic-dialog-backdrop" role="presentation">
+          <section className="academic-dialog" role="dialog" aria-modal="true" aria-labelledby="revoke-dialog-title">
+            <button type="button" className="dialog-close" aria-label="Cerrar" onClick={() => setRevokeTarget(null)}>×</button>
+            <p className="eyebrow">REVOCAR EVALUACIÓN</p>
+            <h3 id="revoke-dialog-title">¿Revocar este intento?</h3>
+            <p><strong>{revokeTarget.studentName}</strong> · [{revokeTarget.purpose ?? "Evaluación"}] {revokeTarget.examName}</p>
+            <p>Se eliminarán los intentos entregados, sus respuestas y calificaciones. La asignación seguirá activa para que el alumno pueda presentar un nuevo intento.</p>
+            <div className="dialog-actions">
+              <button type="button" className="secondary-button" onClick={() => setRevokeTarget(null)} disabled={!!actionAttemptId}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="danger-button"
+                onClick={() => void revokeAttempt()}
+                disabled={!!actionAttemptId}
+              >
+                {actionAttemptId === `revoke-${revokeTarget.studentId}` ? "Revocando…" : "Sí, revocar evaluación"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {loading && <ProgressOverlay title="Consultando matriz de calificaciones…" detail="Cargamos los reactivos, alumnos y calificaciones registradas para este parcial." />}
+      {expiryBusy && <ProgressOverlay title="Cerrando intentos vencidos…" detail="Guardamos y evaluamos las respuestas recibidas antes del límite de tiempo." />}
+      {policySaving && <ProgressOverlay title="Actualizando tiempo y bloqueo…" detail="Guardamos los cambios en la evaluación y actualizamos las restricciones para los alumnos." />}
+      {actionAttemptId && (
+        <ProgressOverlay
+          title={
+            actionAttemptId.startsWith("unlock-")
+              ? "Desbloqueando intento…"
+              : actionAttemptId.startsWith("revoke-")
+              ? "Revocando evaluación…"
+              : actionAttemptId === finalizeAttemptId
+              ? "Finalizando evaluación…"
+              : "Guardando calificación…"
+          }
+          detail="Procesamos la acción del alumno seleccionado y actualizamos su resultado."
+        />
+      )}
+    </section>
+  );
 }

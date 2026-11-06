@@ -14,22 +14,71 @@ export async function POST(request: Request) {
     const backend = getDataBackend();
     if (backend === "sheets" && !hasSheetsBridge()) return Response.json({ error: "La conexión con Apps Script no está configurada." }, { status: 503 });
     const form = await request.formData();
+    const singleFile = form.get("singleFile") || form.get("file");
     const examFile = form.get("examFile");
     const guideFile = form.get("guideFile");
-    if (!(examFile instanceof File) || !(guideFile instanceof File)) return Response.json({ error: "Carga el examen y la guía docente en formato .docx." }, { status: 400 });
-    for (const file of [examFile, guideFile]) {
-      if (!file.name.toLowerCase().endsWith(".docx") || file.size > maxDocxBytes || file.size === 0) return Response.json({ error: "Cada archivo debe ser .docx, no vacío y menor de 10 MB." }, { status: 400 });
+
+    let isSingle = false;
+    let targetSingle: File | null = null;
+    let targetExam: File | null = null;
+    let targetGuide: File | null = null;
+
+    if (singleFile instanceof File && singleFile.size > 0) {
+      isSingle = true;
+      targetSingle = singleFile;
+    } else if (examFile instanceof File && examFile.size > 0 && (!(guideFile instanceof File) || guideFile.size === 0)) {
+      isSingle = true;
+      targetSingle = examFile;
+    } else if (examFile instanceof File && examFile.size > 0 && guideFile instanceof File && guideFile.size > 0) {
+      isSingle = false;
+      targetExam = examFile;
+      targetGuide = guideFile;
+    } else {
+      return Response.json({ error: "Carga la evaluación en un archivo único en formato .docx." }, { status: 400 });
+    }
+
+    if (isSingle) {
+      if (!targetSingle!.name.toLowerCase().endsWith(".docx") || targetSingle!.size > maxDocxBytes) {
+        return Response.json({ error: "El archivo debe ser .docx, no vacío y menor de 10 MB." }, { status: 400 });
+      }
+      const singleResult = await mammoth.extractRawText({ buffer: Buffer.from(await targetSingle!.arrayBuffer()) });
+      const documentText = singleResult.value.trim();
+      if (documentText.length < 80) {
+        return Response.json({ error: "No se pudo extraer suficiente texto del archivo. Verifica que contenga texto seleccionable." }, { status: 422 });
+      }
+      const payload = {
+        documentText,
+        partialId: String(form.get("partialId") || ""),
+        grade: String(form.get("grade") || ""),
+        group: String(form.get("group") || "TODOS"),
+      };
+      if (backend === "postgres") {
+        const draft = await buildExamDraftInPostgres(payload);
+        return Response.json({ draft }, { headers: { "Cache-Control": "no-store" } });
+      }
+      const draft = await sheetsBridge<Record<string, unknown>>("buildExamDraft", payload);
+      return Response.json({ draft }, { headers: { "Cache-Control": "no-store" } });
+    }
+
+    for (const file of [targetExam!, targetGuide!]) {
+      if (!file.name.toLowerCase().endsWith(".docx") || file.size > maxDocxBytes || file.size === 0) {
+        return Response.json({ error: "Cada archivo debe ser .docx, no vacío y menor de 10 MB." }, { status: 400 });
+      }
     }
     const [examResult, guideResult] = await Promise.all([
-      mammoth.extractRawText({ buffer: Buffer.from(await examFile.arrayBuffer()) }),
-      mammoth.extractRawText({ buffer: Buffer.from(await guideFile.arrayBuffer()) }),
+      mammoth.extractRawText({ buffer: Buffer.from(await targetExam!.arrayBuffer()) }),
+      mammoth.extractRawText({ buffer: Buffer.from(await targetGuide!.arrayBuffer()) }),
     ]);
     const examText = examResult.value.trim();
     const guideText = guideResult.value.trim();
-    if (examText.length < 80 || guideText.length < 40) return Response.json({ error: "No se pudo extraer suficiente texto. Verifica que ambos Word contengan texto seleccionable." }, { status: 422 });
+    if (examText.length < 80 || guideText.length < 40) {
+      return Response.json({ error: "No se pudo extraer suficiente texto. Verifica que ambos Word contengan texto seleccionable." }, { status: 422 });
+    }
     const payload = {
-      examText, guideText, partialId: String(form.get("partialId") || ""),
-      grade: String(form.get("grade") || ""), group: String(form.get("group") || "TODOS"),
+      examText, guideText,
+      partialId: String(form.get("partialId") || ""),
+      grade: String(form.get("grade") || ""),
+      group: String(form.get("group") || "TODOS"),
     };
     if (backend === "postgres") {
       const draft = await buildExamDraftInPostgres(payload);

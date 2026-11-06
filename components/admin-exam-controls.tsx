@@ -12,17 +12,19 @@ type CompletedAttempt = {
   examId: string;
   partialId: string;
   examName: string;
+  purpose?: string;
   status: string;
   submittedAt: string;
 };
 
 type StudentOption = Pick<CompletedAttempt, "studentId" | "studentName" | "grade" | "group">;
-type ExamOption = { examId: string; examName: string; attempts: CompletedAttempt[]; latestSubmission: string };
+type ExamOption = { examId: string; examName: string; purpose?: string; attempts: CompletedAttempt[]; latestSubmission: string };
 
 export function AdminExamControls({ active, partialId }: { active: boolean; partialId: string }) {
   const [attempts, setAttempts] = useState<CompletedAttempt[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [kindFilter, setKindFilter] = useState<"all" | "Examen" | "Actividad">("all");
   const [studentSearch, setStudentSearch] = useState("");
   const [isStudentSearchOpen, setIsStudentSearchOpen] = useState(false);
   const [studentId, setStudentId] = useState("");
@@ -37,12 +39,12 @@ export function AdminExamControls({ active, partialId }: { active: boolean; part
     setIsLoading(true);
     setLoadError("");
     try {
-      const response = await fetch("/api/teacher/results", { cache: "no-store" });
+      const response = await fetch("/api/teacher/results?kind=all", { cache: "no-store" });
       const payload = await response.json() as { results?: CompletedAttempt[]; error?: string };
-      if (!response.ok) throw new Error(payload.error || "No se pudieron consultar los exámenes realizados.");
+      if (!response.ok) throw new Error(payload.error || "No se pudieron consultar las evaluaciones realizadas.");
       setAttempts(Array.isArray(payload.results) ? payload.results : []);
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "No se pudieron consultar los exámenes realizados.");
+      setLoadError(error instanceof Error ? error.message : "No se pudieron consultar las evaluaciones realizadas.");
     } finally {
       setIsLoading(false);
     }
@@ -53,12 +55,12 @@ export function AdminExamControls({ active, partialId }: { active: boolean; part
     let cancelled = false;
     async function loadInitialAttempts() {
       try {
-        const response = await fetch("/api/teacher/results", { cache: "no-store" });
+        const response = await fetch("/api/teacher/results?kind=all", { cache: "no-store" });
         const payload = await response.json() as { results?: CompletedAttempt[]; error?: string };
-        if (!response.ok) throw new Error(payload.error || "No se pudieron consultar los exámenes realizados.");
+        if (!response.ok) throw new Error(payload.error || "No se pudieron consultar las evaluaciones realizadas.");
         if (!cancelled) setAttempts(Array.isArray(payload.results) ? payload.results : []);
       } catch (error) {
-        if (!cancelled) setLoadError(error instanceof Error ? error.message : "No se pudieron consultar los exámenes realizados.");
+        if (!cancelled) setLoadError(error instanceof Error ? error.message : "No se pudieron consultar las evaluaciones realizadas.");
       } finally {
         if (!cancelled) { setIsLoading(false); setInitialLoadDone(true); }
       }
@@ -67,7 +69,7 @@ export function AdminExamControls({ active, partialId }: { active: boolean; part
     return () => { cancelled = true; };
   }, [active, initialLoadDone]);
 
-  const partialAttempts = useMemo(() => attempts.filter((attempt) => attempt.partialId === partialId), [attempts, partialId]);
+  const partialAttempts = useMemo(() => attempts.filter((attempt) => attempt.partialId === partialId && (kindFilter === "all" || (attempt.purpose ?? "Examen") === kindFilter)), [attempts, partialId, kindFilter]);
 
   const students = useMemo(() => {
     const query = studentSearch.trim().toLocaleLowerCase("es-MX");
@@ -101,6 +103,7 @@ export function AdminExamControls({ active, partialId }: { active: boolean; part
       const exam = byExam.get(attempt.examId) ?? {
         examId: attempt.examId,
         examName: attempt.examName,
+        purpose: attempt.purpose,
         attempts: [],
         latestSubmission: attempt.submittedAt,
       };
@@ -132,12 +135,12 @@ export function AdminExamControls({ active, partialId }: { active: boolean; part
         body: JSON.stringify({ studentId, examId }),
       });
       const payload = await response.json() as { result?: { deletedAttempts?: number; deletedAnswers?: number; deletedAi?: number }; error?: string };
-      if (!response.ok) throw new Error(payload.error || "No se pudo revocar el examen.");
-      setMessage(`Se revocó “${selectedExam.examName}” para ${selectedStudent.studentName}. Se eliminaron ${payload.result?.deletedAttempts ?? 0} intento(s), ${payload.result?.deletedAnswers ?? 0} respuesta(s) y ${payload.result?.deletedAi ?? 0} evaluación(es) de IA. La asignación permanece activa para que pueda volver a presentarlo.`);
+      if (!response.ok) throw new Error(payload.error || "No se pudo revocar la evaluación.");
+      setMessage(`Se revocó “${selectedExam.examName}” (${selectedExam.purpose ?? "Examen"}) para ${selectedStudent.studentName}. Se eliminaron ${payload.result?.deletedAttempts ?? 0} intento(s), ${payload.result?.deletedAnswers ?? 0} respuesta(s) y ${payload.result?.deletedAi ?? 0} evaluación(es) de IA. La asignación permanece activa para que pueda volver a presentarla.`);
       setExamId("");
       await loadCompletedAttempts();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "No se pudo revocar el examen.");
+      setMessage(error instanceof Error ? error.message : "No se pudo revocar la evaluación.");
     } finally {
       revokeInFlight.current = false;
       setIsSubmitting(false);
@@ -148,14 +151,30 @@ export function AdminExamControls({ active, partialId }: { active: boolean; part
     <section className="admin-controls" aria-labelledby="admin-controls-title">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">ADMINISTRACIÓN DE EXÁMENES</p>
-          <h2 id="admin-controls-title">Revocar examen</h2>
+          <p className="eyebrow">ADMINISTRACIÓN DE EVALUACIONES</p>
+          <h2 id="admin-controls-title">Revocar examen o actividad evaluada</h2>
         </div>
         <span className="admin-control-badge">Acción docente</span>
       </div>
-      <p className="admin-control-description">Busca al alumno por nombre y elige uno de sus exámenes entregados. Se borrarán los intentos y respuestas de ese examen; la asignación seguirá activa para que pueda presentarlo nuevamente.</p>
+      <p className="admin-control-description">Busca al alumno por nombre y elige una de sus evaluaciones entregadas (examen o trabajo con evaluación). Se borrarán los intentos y respuestas de esa evaluación; la asignación seguirá activa para que pueda presentarla nuevamente.</p>
 
       <form className="admin-revoke-form" onSubmit={revoke}>
+        <div className="select-field">
+          <label htmlFor="revoke-kind-filter">Tipo de evaluación</label>
+          <select
+            id="revoke-kind-filter"
+            value={kindFilter}
+            onChange={(e) => {
+              setKindFilter(e.target.value as "all" | "Examen" | "Actividad");
+              setExamId("");
+              setMessage("");
+            }}
+          >
+            <option value="all">Todos (Exámenes y Trabajos con evaluación)</option>
+            <option value="Examen">Sólo Exámenes</option>
+            <option value="Actividad">Sólo Trabajos / Actividades con evaluación</option>
+          </select>
+        </div>
         <div className="select-field revoke-student-search">
           <label htmlFor="revoke-student-name">1. Buscar y seleccionar alumno</label>
           <div className="revoke-student-combobox">
@@ -220,42 +239,42 @@ export function AdminExamControls({ active, partialId }: { active: boolean; part
         </div>
 
         <label className="select-field">
-          <span>2. Examen realizado</span>
+          <span>2. Evaluación realizada</span>
           <select value={examId} onChange={(event) => { setExamId(event.target.value); setMessage(""); }} disabled={!studentId || completedExams.length === 0}>
-            <option value="">{!studentId ? "Primero selecciona un alumno" : completedExams.length ? "Elige un examen entregado" : "No tiene exámenes realizados"}</option>
+            <option value="">{!studentId ? "Primero selecciona un alumno" : completedExams.length ? "Elige una evaluación entregada" : "No tiene evaluaciones realizadas"}</option>
             {completedExams.map((exam) => (
               <option key={exam.examId} value={exam.examId}>
-                {exam.examName} · {exam.attempts.length} intento(s)
+                [{exam.purpose ?? "Examen"}] {exam.examName} · {exam.attempts.length} intento(s)
               </option>
             ))}
           </select>
         </label>
 
         <button className="danger-button" type="submit" disabled={isSubmitting || !selectedExam}>
-          {isSubmitting ? "Revocando…" : "Revocar examen seleccionado"}
+          {isSubmitting ? "Revocando…" : "Revocar evaluación seleccionada"}
         </button>
       </form>
 
       {loadError && <p className="notice" role="alert">{loadError}</p>}
-      {!isLoading && !loadError && attempts.length === 0 && <p className="admin-control-hint">Aún no hay exámenes entregados para revocar.</p>}
-      {selectedExam && <p className="admin-control-hint">Se encontraron {selectedExam.attempts.length} intento(s) entregados de este examen. La revocación los eliminará todos junto con sus respuestas y evaluaciones de IA.</p>}
+      {!isLoading && !loadError && attempts.length === 0 && <p className="admin-control-hint">Aún no hay evaluaciones entregadas para revocar.</p>}
+      {selectedExam && <p className="admin-control-hint">Se encontraron {selectedExam.attempts.length} intento(s) de [{selectedExam.purpose ?? "Examen"}]. La revocación los eliminará todos junto con sus respuestas y evaluaciones de IA.</p>}
       {message && <p className="admin-control-message" role="status">{message}</p>}
       {isConfirming && selectedStudent && selectedExam && (
         <div className="revoke-confirm-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setIsConfirming(false); }}>
           <section className="revoke-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="revoke-confirm-title" aria-describedby="revoke-confirm-description">
             <p className="eyebrow">CONFIRMACIÓN</p>
-            <h3 id="revoke-confirm-title">¿Revocar este examen?</h3>
-            <p id="revoke-confirm-description"><strong>{selectedStudent.studentName}</strong> · {selectedExam.examName}</p>
-            <p>Se eliminarán los {selectedExam.attempts.length} intento(s) entregados, sus respuestas y calificaciones, incluidas las evaluaciones de IA. La asignación seguirá activa para que el alumno pueda volver a hacer el examen.</p>
+            <h3 id="revoke-confirm-title">¿Revocar esta evaluación?</h3>
+            <p id="revoke-confirm-description"><strong>{selectedStudent.studentName}</strong> · [{selectedExam.purpose ?? "Examen"}] {selectedExam.examName}</p>
+            <p>Se eliminarán los {selectedExam.attempts.length} intento(s) entregados, sus respuestas y calificaciones, incluidas las evaluaciones de IA. La asignación seguirá activa para que el alumno pueda volver a presentarla.</p>
             <div className="revoke-confirm-actions">
               <button className="revoke-cancel-button" type="button" onClick={() => setIsConfirming(false)}>Cancelar</button>
-              <button className="danger-button" type="button" onClick={() => void confirmRevocation()} disabled={isSubmitting}>Sí, revocar examen</button>
+              <button className="danger-button" type="button" onClick={() => void confirmRevocation()} disabled={isSubmitting}>Sí, revocar evaluación</button>
             </div>
           </section>
         </div>
       )}
-      {isLoading && !isSubmitting && <ProgressOverlay title="Consultando exámenes entregados…" detail="Cargamos los intentos para que puedas buscar al alumno y elegir el examen correcto." />}
-      {isSubmitting && <ProgressOverlay title="Revocando examen…" detail="Verificamos al alumno, eliminamos sus intentos entregados y actualizamos las calificaciones." />}
+      {isLoading && !isSubmitting && <ProgressOverlay title="Consultando evaluaciones entregadas…" detail="Cargamos los intentos para que puedas buscar al alumno y elegir la evaluación correcta." />}
+      {isSubmitting && <ProgressOverlay title="Revocando evaluación…" detail="Verificamos al alumno, eliminamos sus intentos entregados y actualizamos las calificaciones." />}
     </section>
   );
 }

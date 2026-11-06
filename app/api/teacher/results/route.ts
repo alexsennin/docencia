@@ -11,9 +11,11 @@ export async function GET(request: Request) {
     const backend = getDataBackend();
     if (backend === "postgres") {
       const params = new URL(request.url).searchParams;
+      const rawKind = params.get("kind");
+      const kind = rawKind === "Actividad" ? "Actividad" : rawKind === "all" ? "all" : "Examen";
       return Response.json(await getTeacherExamResultsInPostgres({
         includeInProgress: params.get("includeInProgress") === "true",
-        kind: params.get("kind") === "Actividad" ? "Actividad" : "Examen",
+        kind,
       }), { headers: { "Cache-Control": "no-store" } });
     }
     if (new URL(request.url).searchParams.get("kind") === "Actividad") {

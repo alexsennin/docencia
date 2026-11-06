@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ProgressOverlay } from "./progress-overlay";
+import { extractClassificationItems } from "../lib/exam-engine";
 import type { AnswerMap, ExamResult, PublicExam, Student } from "../lib/exam-types";
 
 type Phase = "login" | "selection" | "exam" | "grading" | "result";
@@ -291,18 +292,24 @@ export default function StudentExamPortal() {
               )}
               {question.type === "clasificacion" && (
                 <div className="classification-list">
-                  {[0, 1, 2, 3, 4].map((index) => (
-                    <label key={index}>Fragmento {index + 1}
+                  {extractClassificationItems(question.prompt).map((itemLabel, index) => (
+                    <label key={index}>
+                      <span className="classification-item-title">{itemLabel}</span>
                       <select
                         value={Array.isArray(answers[question.id]) ? answers[question.id][index] || "" : ""}
                         onChange={(event) => {
-                          const values = Array.isArray(answers[question.id]) ? [...answers[question.id]] : ["", "", "", "", ""];
-                          values[index] = event.target.value;
-                          setAnswer(question.id, values);
+                          const current = Array.isArray(answers[question.id]) ? [...answers[question.id]] : [];
+                          current[index] = event.target.value;
+                          setAnswer(question.id, current);
                         }}
                         disabled={locked}
                       >
-                        <option value="">Seleccionar</option><option value="A">A · Reglamento</option><option value="B">B · Refrán</option><option value="C">C · Pregón</option>
+                        <option value="">Seleccionar</option>
+                        {question.options.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label || option.value}
+                          </option>
+                        ))}
                       </select>
                     </label>
                   ))}
