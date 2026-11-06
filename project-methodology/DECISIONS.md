@@ -1,12 +1,37 @@
 # Decisiones duraderas
 
+## DEC-019 — Priorización operativa y postergación de complejidad en autenticación
+
+- **Fecha / estado:** 2026-11-06 · Aceptada por instrucción explícita del usuario.
+- **Contexto:** En la auditoría técnica se sugirieron rate limiting (`SEC-02`), mitigación de timing side-channel (`SEC-03`) y contraseñas estudiantiles. El usuario clarificó que el sistema se encuentra en fase de prueba funcional con aproximadamente 127 alumnos, donde el acceso se limita a consultar notas y realizar exámenes asignados sin operaciones críticas que comprometan la integridad general.
+- **Decisión:** Mantener el acceso por ID escolar simple sin contraseñas para los alumnos, evitando fricción operativa y pérdidas de tiempo docente gestionando olvidos de contraseña. Posponer medidas complejas de autenticación estudiantil. A futuro, se contempla separar explícitamente el inicio de sesión docente (con contraseña obligatoria) del portal del estudiante, incorporando en este último una ventana/tiempo de espera ante intentos fallidos.
+- **Consecuencias:** Se eliminan las tareas `SEC-02`, `SEC-03` y `SEC-05` de las prioridades inmediatas.
+
+## DEC-020 — Matriz consolidada de asistencia por grupo y exportación para hojas de cálculo
+
+- **Fecha / estado:** 2026-11-06 · Implementada, validada y desplegada en Producción.
+- **Decisión:** En la sección Clases (debajo del listado general de sesiones), se incorpora una matriz consolidada de asistencia (`AttendanceMatrixTable`).
+- **Estructura:**
+  - Columnas: `ID Alumno`, `Nombre alumno`, seguidos cronológicamente por cada fecha de clase (`fecha 1 | fecha 2 | ...`) en formato `DD/MM` con indicador del día de la semana.
+  - Celdas: `P` (Asistencia / Presente - fondo verde suave), `I` (Inasistencia - fondo rojo suave), `R` (Retardo - fondo ámbar suave) y vacía si no existe registro.
+  - Orden: Alumnos ordenados estrictamente de forma alfabética por sus apellidos (`localeCompare(..., "es-MX")`).
+  - Copiado al portapapeles: Un botón permite copiar en formato TSV (compatible con Excel y Google Sheets) **exclusivamente** el nombre del alumno, las fechas y las celdas de asistencia, omitiendo la columna del ID escolar para que coincida directamente con los registros oficiales de la docente.
+- **Referencias:** `components/attendance-matrix-table.tsx`, `components/teacher-academic-module.tsx`, `app/globals.css`, `tests/attendance-matrix.test.mjs`.
+
 ## DEC-017 — Evaluaciones reutilizables y trabajos en modalidad examen
 
-- **Fecha / estado:** 2026-10-12 · Flujo base publicado en Producción; corrección de guardado y Espacio de Pruebas en curso local.
-- **Decisión:** separar plantillas de Examen y Actividad; la docente guarda una versión, la aprueba y luego la aplica explícitamente al grupo del catálogo. Una Actividad se vincula a la sesión y aporta una sola nota derivada del intento a EC; un Examen aporta a EX. Nuevas aplicaciones guardan política inmutable de tiempo estricto/libre y bloqueo opcional por pantalla completa/pérdida de foco. Las aplicaciones históricas conservan su contrato.
+- **Fecha / estado:** 2026-10-12 · Implementada, probada en UI local y publicada en Producción (`dpl_7uWX9cLEjYKcgUZaVEyRa7aTjhSX`).
+- **Decisión:** separar plantillas de Examen y Actividad; la docente guarda una versión (incluso con claves o rúbricas pendientes), la prueba en `/docente/probar` sin crear intentos, la aprueba con validación completa y luego la aplica explícitamente al grupo del catálogo. Una Actividad se vincula a la sesión y aporta una sola nota derivada del intento a EC; un Examen aporta a EX. Nuevas aplicaciones guardan política inmutable de tiempo estricto/libre y bloqueo opcional por pantalla completa/pérdida de foco. Las aplicaciones históricas conservan su contrato.
 - **Acceso:** por instrucción expresa del usuario, el alumno continúa entrando sólo con ID. Una sesión de servidor ligada al ID protege las rutas posteriores; no se considera verificación fuerte de identidad.
 - **Tiempo y cierre:** el deadline estricto se persiste y no se extiende al desbloquear. Alumno, docente y cron pueden cerrar intentos vencidos usando respuestas autoguardadas. El cron diario es respaldo; el intervalo efectivo se revisará según plan y necesidad operativa.
-- **Límites:** Producción tiene el flujo base y migración `0009`; corrección de borradores incompletos y prueba directa de plantillas guardadas todavía no desplegada. El recorrido autenticado con datos sintéticos en Producción sigue pendiente para evitar escrituras en datos reales.
+- **Límites:** migración `0009` en Neon Production y frontend en Vercel `dpl_7uWX9cLEjYKcgUZaVEyRa7aTjhSX` (READY). Se completó el recorrido autenticado de lectura y simulación en Producción (`Constructor`, `Exámenes` y `/docente/probar`) sin escribir ni alterar datos escolares reales; GitHub `origin/main` sigue en `39cc792` sin push.
+
+## DEC-018 — Constructor unificado en 1 solo archivo y revisión visual de reactivos
+
+- **Fecha / estado:** 2026-10-13 · Implementada, validada en PostgreSQL local aislado y publicada en Vercel Producción (`docencia-ophhgjpg6-alex-sennin.vercel.app`, alias `https://docencia.integratech.app`).
+- **Contexto:** las docentes solían requerir dos archivos `.docx` separados (uno para el examen y otro para la rúbrica), y la revisión de borradores obligaba a manipular JSON crudo en un `<textarea>`. La docente solicitó un flujo más natural: un único documento que incluya el nombre de la evaluación al principio, los reactivos limpios para el alumno y la rúbrica detallada al final.
+- **Decisión:** permitir la carga de 1 solo archivo `.docx` (modo predeterminado) que reúne el título/nombre del ejercicio al inicio, las consignas e incisos del alumno, y la sección delimitada de guía docente y rúbrica al final. Se mantiene un modo alterno para subir 2 archivos si la docente ya los tiene separados. En la interfaz se incorpora una guía desplegable con la plantilla modelo descargable/copiable. La revisión del borrador se transforma de JSON crudo a tarjetas visuales interactivas: campo editable del título del examen, contador dinámico de suma de puntos a 100 y lista de reactivos con sus consignas, opciones y criterios de rúbrica, dejando el editor JSON como acordeón técnico secundario.
+- **Consecuencias y límites:** el backend (`app/api/teacher/exams/draft/route.ts` y `lib/exam-authoring-postgres.ts`) extrae el texto, detecta el título en el encabezado (`NOMBRE DE LA EVALUACIÓN: ...`), separa preguntas de la rúbrica y mantiene la privacidad de los criterios de calificación. Sin commits ni push a GitHub por regla vigente del proyecto.
 
 ## DEC-001 — Mantener la arquitectura operativa Sheets + Apps Script + Vercel
 
@@ -183,3 +208,21 @@ El usuario indicó incluir retardos del periodo además de comentarios. La versi
 - **Fecha / estado:** 2026-10-06 · Solicitada por el usuario; implementada en el checkout local.
 - **Decisión:** la vista Alumnos requiere seleccionar un grupo activo antes de mostrar estudiantes y limita búsqueda, paginación e inclusión de inactivos a ese grupo.
 - **Alcance:** sólo presentación del padrón; no cambia API, esquema, asignaciones, ni datos. Despliegue y aceptación de Producción quedan pendientes.
+
+## DEC-017 — Constructor Unificado de Evaluaciones en Archivo Único y Rúbrica Privada
+
+- **Fecha / estado:** 2026-10-13 · Implementada y verificada.
+- **Decisión:** simplificar la creación de evaluaciones docentes a un único archivo `.docx` que incluye el nombre del ejercicio al inicio (`NOMBRE DE LA EVALUACIÓN: ...`), las consignas del estudiante y la rúbrica/criterios al final (`SECCIÓN 2: GUÍA DOCENTE, CRITERIOS Y RÚBRICA`).
+- **Consecuencias:** el backend parsea y divide el documento, asegurando que la rúbrica y respuestas esperadas se usen exclusivamente como guía para la IA evaluadora y nunca se expongan en el frontend estudiantil. Se alineó tanto PostgreSQL como Google Sheets Bridge (`Code.js`) para aceptar y procesar este formato unificado. La interfaz incorpora vista previa visual de reactivos con tarjetas interactivas, edición directa del título y medidor en tiempo real de sumatoria a 100 puntos.
+- **Referencias:** `app/api/teacher/exams/draft/route.ts`, `lib/exam-authoring-postgres.ts`, `integrations/google-sheets-bridge/Code.js`, `components/teacher-assessment-repository.tsx`.
+
+## DEC-018 — Correcciones de Seguridad, Calificación Proporcional y Modularidad
+
+- **Fecha / estado:** 2026-10-13 · Implementada y probada localmente.
+- **Decisiones clave:**
+  1. **Seguridad contra Inyección de Prompts (`SEC-04` / `SEC-01`):** blindaje en la evaluación de respuestas abiertas mediante delimitadores XML `<RESPUESTA_DEL_ALUMNO>`, instrucción del sistema estricta anti-jailbreak y migración de credenciales Gemini de query parameter a cabecera HTTP `x-goog-api-key`.
+  2. **Calificación Proporcional y Reactivos Dinámicos (`DAT-01` / `DAT-03`):** preguntas de clasificación ahora extraen reactivos dinámicos del prompt del examen y otorgan crédito proporcional según aciertos individuales (`(aciertos / total) * maxScore`), eliminando la penalización "todo o nada".
+  3. **Integridad Relacional (`DAT-04`):** adición de `ON DELETE CASCADE` en la clave foránea de `assessment_template_questions.template_id` (migración `0010_redundant_albert_cleary.sql`).
+  4. **Cumplimiento de UI (`FNT-01` / `FNT-02` / `FNT-03`):** inclusión obligatoria de `ProgressOverlay` y guardia contra doble ejecución en refresco de asignaciones; eliminación de componente muerto `TeacherExamAuthoring`; y modularización del monolito `teacher-academic-module.tsx` en `AcademicDashboardView`, `AcademicArchivedView` y `AcademicStudentDetailDialog`.
+  5. **Estabilización de Entorno Local:** sincronización de base de datos Docker local en puerto 15432 con migraciones 0009 y 0010 y semillas de prueba, permitiendo ejecución completa de pruebas de integración offline.
+- **Referencias:** `lib/exam-attempt-postgres.ts`, `lib/exam-engine.ts`, `components/student-exam-portal.tsx`, `components/teacher-exam-preview.tsx`, `components/teacher-academic-module.tsx`, `db/migrations/0010_redundant_albert_cleary.sql`.

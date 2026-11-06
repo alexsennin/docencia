@@ -1,10 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { calculateAcademicMatrix, effectiveAssessmentScore, mexicoToday } from "../lib/academic-engine";
+import { calculateAcademicMatrix, effectiveAssessmentScore, mexicoToday, type StudentPartialGrade } from "../lib/academic-engine";
 import { listArchivedAcademicItems } from "../lib/academic-archive";
 import { ProgressOverlay } from "./progress-overlay";
 import { TeacherAssessmentPicker } from "./teacher-assessment-picker";
+import { AcademicDashboardView } from "./academic-dashboard-view";
+import { AcademicArchivedView } from "./academic-archived-view";
+import { AcademicStudentDetailDialog } from "./academic-student-detail-dialog";
+import { AttendanceMatrixTable } from "./attendance-matrix-table";
 
 type Row = Record<string, string | number | boolean | null | undefined>;
 type Snapshot = { partials: Row[]; students: Row[]; sessions: Row[]; absences: Row[]; tasks: Row[]; taskScores: Row[]; conduct: Row[]; grades: Row[]; exams: Row[]; attempts: Row[]; assignments: Row[]; reports: Row[] };
@@ -19,14 +23,6 @@ type TaskDraft = { score: string };
 type TaskKind = "Tarea" | "Trabajo en clase";
 const str = (row: Row, key: string) => String(row[key] ?? "");
 const isActiveStudent = (student: Row) => !["FALSE", "0"].includes(str(student, "activo").toUpperCase());
-const reportList = (value: unknown): string[] => {
-  if (Array.isArray(value)) return value.map(String).map((item) => item.trim()).filter(Boolean);
-  if (typeof value !== "string" || !value.trim()) return [];
-  try {
-    const parsed: unknown = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed.map(String).map((item) => item.trim()).filter(Boolean) : [value];
-  } catch { return [value]; }
-};
 const numeric = (row: Row, key: string) => row[key] === "" || row[key] === null || row[key] === undefined ? "" : String(row[key]);
 const taskMaximum = (task: Row) => {
   const maximum = Number(task.puntaje_maximo);
@@ -109,6 +105,18 @@ export function TeacherAcademicModule({ active, mode, partialId, onPartialChange
   const [showSessionForm, setShowSessionForm] = useState(false);
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
   const [taskToDelete, setTaskToDelete] = useState<Row | null>(null);
+  const [taskToEditPolicy, setTaskToEditPolicy] = useState<Row | null>(null);
+  const [policyTimeMode, setPolicyTimeMode] = useState<"Estricto" | "Libre">("Estricto");
+  const [policyDurationMinutes, setPolicyDurationMinutes] = useState(50);
+  const [policyLockOnFocusLoss, setPolicyLockOnFocusLoss] = useState(true);
+  const [assessmentGradeTarget, setAssessmentGradeTarget] = useState<{
+    task: Row;
+    student: Row;
+    examId: string;
+    currentGrade10: number | null;
+  } | null>(null);
+  const [assessmentManualGrade, setAssessmentManualGrade] = useState("");
+  const [assessmentManualReason, setAssessmentManualReason] = useState("");
   const [sessionDate, setSessionDate] = useState("");
   const [selectedPendingIds, setSelectedPendingIds] = useState<string[]>([]);
   const [annotationStudentId, setAnnotationStudentId] = useState("");
@@ -125,7 +133,7 @@ export function TeacherAcademicModule({ active, mode, partialId, onPartialChange
     if (!active) return;
     let cancelled = false;
     Promise.resolve().then(() => {
-      if (!cancelled) setBusy({ title: "Actualizando el panel…" });
+      if (!cancelled) setBusy({ title: "Actualizando el panel…", detail: "Cargamos los registros académicos actualizados." });
       return fetch("/api/teacher/academic", { cache: "no-store" });
     }).then(async (response) => {
       const body = await response.json() as ResponseData;
@@ -181,13 +189,55 @@ export function TeacherAcademicModule({ active, mode, partialId, onPartialChange
   const partialGrades = useMemo(() => matrix.filter((item) => item.partialId === partialId), [matrix, partialId]);
   const groupAverages = useMemo(() => groups.map((item) => {
     const entries = partialGrades.filter((grade) => grade.group === item);
-    const ready = entries.filter((grade) => grade.final10 !== null);
-    return { group: item, average: ready.length ? ready.reduce((sum, grade) => sum + (grade.final10 ?? 0), 0) / ready.length : null, evaluated: ready.length, total: entries.length };
+    const scoredEntries = entries.map((grade) => {
+      if (grade.final10 !== null && grade.final10 !== undefined) {
+        return { grade, score: grade.final10, basis: "final" as const };
+      }
+      if (grade.ec !== null && grade.ec !== undefined) {
+        return { grade, score: Number((grade.ec / 10).toFixed(1)), basis: "ec" as const };
+      }
+      return null;
+    }).filter((x): x is { grade: StudentPartialGrade; score: number; basis: "final" | "ec" } => x !== null);
+
+    const hasFinal = scoredEntries.some((x) => x.basis === "final");
+    const basis: "final" | "ec" | "none" = hasFinal ? "final" : (scoredEntries.length ? "ec" : "none");
+    const average = scoredEntries.length
+      ? scoredEntries.reduce((sum, x) => sum + x.score, 0) / scoredEntries.length
+      : null;
+
+    return {
+      group: item,
+      average,
+      evaluated: scoredEntries.length,
+      total: entries.length,
+      basis,
+    };
   }), [groups, partialGrades]);
-  const lowestStudents = useMemo(() => partialGrades.filter((grade) => grade.final10 !== null).map((grade) => ({
-    grade,
-    name: str(data?.snapshot.students.find((student) => str(student, "id") === grade.studentId) ?? {}, "nombre") || grade.studentId,
-  })).sort((a, b) => (a.grade.final10 ?? 0) - (b.grade.final10 ?? 0)).slice(0, 10), [data, partialGrades]);
+
+  const lowestStudents = useMemo(() => {
+    const scored = partialGrades.map((grade) => {
+      let score: number | null = null;
+      let basis: "final" | "ec" = "final";
+      if (grade.final10 !== null && grade.final10 !== undefined) {
+        score = grade.final10;
+        basis = "final";
+      } else if (grade.ec !== null && grade.ec !== undefined) {
+        score = Number((grade.ec / 10).toFixed(1));
+        basis = "ec";
+      }
+      if (score === null) return null;
+      const studentObj = data?.snapshot.students.find((student) => str(student, "id") === grade.studentId);
+      const name = str(studentObj ?? {}, "nombre") || grade.studentId;
+      return {
+        grade,
+        score,
+        basis,
+        name,
+      };
+    }).filter((x): x is { grade: StudentPartialGrade; score: number; basis: "final" | "ec"; name: string } => x !== null);
+
+    return scored.sort((a, b) => a.score - b.score).slice(0, 10);
+  }, [data, partialGrades]);
   const pendingExamReviews = useMemo(() => (data?.snapshot.attempts ?? []).filter((attempt) => str(attempt, "parcial_id") === partialId && str(attempt, "estado") === "Provisional" && String(attempt.ai_pendiente).toLowerCase() === "true").map((attempt) => ({
     attemptId: str(attempt, "intento_id"),
     studentId: str(attempt, "alumno_id"),
@@ -437,11 +487,21 @@ export function TeacherAcademicModule({ active, mode, partialId, onPartialChange
   }
 
   async function refreshAfterAssessmentAssignment() {
-    const response = await fetch("/api/teacher/academic", { cache: "no-store" });
-    const body = await response.json() as ResponseData;
-    if (!response.ok) throw new Error(body.error || "El trabajo se asignó, pero no se pudo actualizar la sesión.");
-    setData(body);
-    setMessage("Trabajo con evaluación asignado. La calificación aparecerá al entregarse.");
+    if (remoteActionInFlight.current) return;
+    remoteActionInFlight.current = true;
+    setBusy({ title: "Actualizando sesión…", detail: "Recuperamos el trabajo asignado para actualizar la lista de actividades." });
+    try {
+      const response = await fetch("/api/teacher/academic", { cache: "no-store" });
+      const body = await response.json() as ResponseData;
+      if (!response.ok) throw new Error(body.error || "El trabajo se asignó, pero no se pudo actualizar la sesión.");
+      setData(body);
+      setMessage("Trabajo con evaluación asignado. La calificación aparecerá al entregarse.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "El trabajo se asignó, pero no se pudo actualizar la sesión.");
+    } finally {
+      remoteActionInFlight.current = false;
+      setBusy(null);
+    }
   }
 
   async function deleteSession() {
@@ -480,6 +540,163 @@ export function TeacherAcademicModule({ active, mode, partialId, onPartialChange
     setTaskToDelete(null);
   }
 
+  function openTaskPolicyEditor(task: Row) {
+    const examId = str(task, "evaluacion_examen_id");
+    if (!examId) return;
+    const linkedExam = data?.snapshot.exams.find((item) => str(item, "examen_id") === examId);
+    const currentMode = str(linkedExam ?? {}, "modo_tiempo") === "Libre" ? "Libre" : "Estricto";
+    const currentDuration = Number(linkedExam?.duracion_minutos) || 50;
+    const rawLock = str(linkedExam ?? {}, "bloqueo_foco").toUpperCase();
+    const currentLock = rawLock ? rawLock !== "FALSE" && rawLock !== "0" : str(linkedExam ?? {}, "requiere_pantalla_completa").toUpperCase() !== "FALSE";
+    setPolicyTimeMode(currentMode);
+    setPolicyDurationMinutes(currentDuration);
+    setPolicyLockOnFocusLoss(currentLock);
+    setTaskToEditPolicy(task);
+  }
+
+  async function saveTaskPolicy() {
+    const examId = str(taskToEditPolicy ?? {}, "evaluacion_examen_id");
+    if (!examId || remoteActionInFlight.current) return;
+    remoteActionInFlight.current = true;
+    setBusy({
+      title: "Actualizando tiempo y bloqueo…",
+      detail: "Guardamos los nuevos ajustes de tiempo y bloqueo de pantalla en la actividad y sus intentos activos.",
+    });
+    setError("");
+    setMessage("");
+    try {
+      const normalizedDuration = policyTimeMode === "Libre" ? null : policyDurationMinutes;
+      const response = await fetch("/api/teacher/assessments", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "updatePolicy",
+          examId,
+          timeMode: policyTimeMode,
+          durationMinutes: normalizedDuration,
+          lockOnFocusLoss: policyLockOnFocusLoss,
+        }),
+      });
+      const body = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(body.error || "No se pudieron actualizar los ajustes de tiempo y bloqueo.");
+      setData((current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          snapshot: {
+            ...current.snapshot,
+            exams: current.snapshot.exams.map((exam) => str(exam, "examen_id") === examId ? {
+              ...exam,
+              modo_tiempo: policyTimeMode,
+              duracion_minutos: normalizedDuration ?? "",
+              bloqueo_foco: policyLockOnFocusLoss ? "TRUE" : "FALSE",
+              requiere_pantalla_completa: policyLockOnFocusLoss ? "TRUE" : "FALSE",
+            } : exam),
+          },
+        };
+      });
+      setTaskToEditPolicy(null);
+      setMessage("Ajustes de tiempo y bloqueo de pantalla actualizados en la actividad.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "No se pudieron actualizar los ajustes de tiempo y bloqueo.");
+    } finally {
+      remoteActionInFlight.current = false;
+      setBusy(null);
+    }
+  }
+
+  function openAssessmentGradeModal(task: Row, student: Row, score: number | null) {
+    const examId = str(task, "evaluacion_examen_id");
+    if (!examId) return;
+    setAssessmentGradeTarget({
+      task,
+      student,
+      examId,
+      currentGrade10: score !== null ? Number((score / 10).toFixed(2)) : null,
+    });
+    setAssessmentManualGrade(score !== null ? (score / 10).toFixed(1) : "");
+    setAssessmentManualReason("");
+  }
+
+  async function saveAssessmentGrade() {
+    if (!assessmentGradeTarget || remoteActionInFlight.current) return;
+    const numGrade = Number(assessmentManualGrade);
+    if (!Number.isFinite(numGrade) || numGrade < 0 || numGrade > 10) {
+      setError("La calificación debe estar entre 0 y 10.");
+      return;
+    }
+    if (!assessmentManualReason.trim()) {
+      setError("Indica el motivo del ajuste de calificación.");
+      return;
+    }
+    remoteActionInFlight.current = true;
+    setBusy({
+      title: "Guardando calificación de actividad…",
+      detail: "Registramos la calificación manual y actualizamos los promedios del parcial.",
+    });
+    setError("");
+    setMessage("");
+    try {
+      const response = await fetch("/api/teacher/results/score", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          examId: assessmentGradeTarget.examId,
+          studentId: str(assessmentGradeTarget.student, "id"),
+          manualGradeLocked: true,
+          manualGradeOnTen: numGrade,
+          reason: assessmentManualReason.trim(),
+        }),
+      });
+      const body = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(body.error || "No se pudo guardar la calificación de la actividad.");
+      const refreshResponse = await fetch("/api/teacher/academic", { cache: "no-store" });
+      const refreshBody = await refreshResponse.json() as ResponseData;
+      if (refreshResponse.ok) setData(refreshBody);
+      setAssessmentGradeTarget(null);
+      setMessage(`Calificación actualizada para ${str(assessmentGradeTarget.student, "nombre")}.`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "No se pudo guardar la calificación.");
+    } finally {
+      remoteActionInFlight.current = false;
+      setBusy(null);
+    }
+  }
+
+  async function revokeAssessmentForStudent() {
+    if (!assessmentGradeTarget || remoteActionInFlight.current) return;
+    remoteActionInFlight.current = true;
+    setBusy({
+      title: "Revocando evaluación de actividad…",
+      detail: "Eliminamos los intentos para que el alumno pueda volver a presentarla.",
+    });
+    setError("");
+    setMessage("");
+    try {
+      const response = await fetch("/api/admin/revoke-exam", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          examId: assessmentGradeTarget.examId,
+          studentId: str(assessmentGradeTarget.student, "id"),
+        }),
+      });
+      const body = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(body.error || "No se pudo revocar la evaluación.");
+      const refreshResponse = await fetch("/api/teacher/academic", { cache: "no-store" });
+      const refreshBody = await refreshResponse.json() as ResponseData;
+      if (refreshResponse.ok) setData(refreshBody);
+      const studentName = str(assessmentGradeTarget.student, "nombre");
+      setAssessmentGradeTarget(null);
+      setMessage(`Evaluación revocada para ${studentName}. La asignación queda lista para un nuevo intento.`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "No se pudo revocar la evaluación.");
+    } finally {
+      remoteActionInFlight.current = false;
+      setBusy(null);
+    }
+  }
+
   const annotationStudent = students.find((student) => str(student, "id") === annotationStudentId);
   const detailStudent = students.find((student) => str(student, "id") === detailStudentId);
   const detailReports = (data?.snapshot.reports ?? []).filter((report) =>
@@ -491,10 +708,7 @@ export function TeacherAcademicModule({ active, mode, partialId, onPartialChange
   return <><section className={`academic-module${mode === "dashboard" ? " academic-dashboard" : ""}`} aria-labelledby="academic-title">
     {mode !== "dashboard" && <div className="section-heading"><div><p className="eyebrow">{mode === "clases" ? `CLASES · ${str(partial ?? {}, "nombre")}` : mode === "calificaciones" ? `CALIFICACIONES · ${str(partial ?? {}, "nombre")}` : "ARCHIVO DOCENTE"}</p><h2 id="academic-title">{mode === "clases" ? "Sesiones del grupo" : mode === "archivados" ? "Sesiones y actividades archivadas" : "Calificaciones del grupo"}</h2></div></div>}
     {error && <p className="notice" role="alert">{error}</p>}{message && <p className="academic-success" role="status">{message}</p>}
-    {mode === "archivados" && <section className="academic-card archived-records-card" aria-labelledby="archived-records-title">
-      <div className="academic-matrix-header"><div><p className="eyebrow">CONSULTA GENERAL</p><h3 id="archived-records-title">Registros archivados</h3><p>Las sesiones, tareas y trabajos archivados se conservan aquí y ya no participan en los cálculos activos.</p></div><span className="result-count">{archivedItems.length} {archivedItems.length === 1 ? "registro" : "registros"}</span></div>
-      {archivedItems.length ? <div className="matrix-scroll"><table className="academic-matrix archived-records-table"><thead><tr><th>Tipo</th><th>Nombre</th><th>Grupo</th><th>Parcial</th><th>Fecha de actividad</th><th>Archivado</th></tr></thead><tbody>{archivedItems.map((item) => <tr key={item.id}><td>{item.type}</td><th>{item.name}</th><td>{item.group || "—"}</td><td>{item.partialName || "—"}</td><td>{item.activityDate || "—"}</td><td>{item.archivedAt ? new Date(item.archivedAt).toLocaleDateString("es-MX") : "—"}</td></tr>)}</tbody></table></div> : <p className="empty-state">Todavía no hay sesiones, tareas ni trabajos archivados.</p>}
-    </section>}
+    {mode === "archivados" && <AcademicArchivedView archivedItems={archivedItems} />}
     {(mode === "clases" || mode === "calificaciones") && <>
     <div className="academic-toolbar session-context">
       <label className="select-field"><span>Grupo</span><select value={group} onChange={(event) => { setGroup(event.target.value); setSessionId(""); setView("review"); }} disabled={!groups.length}>{groups.map((item) => <option key={item}>{item}</option>)}</select></label>
@@ -509,26 +723,23 @@ export function TeacherAcademicModule({ active, mode, partialId, onPartialChange
     </section>}
     </>}
 
-    {mode === "dashboard" && <div className="teacher-dashboard-content">
-      <button className="pending-review-card" type="button" onClick={() => setShowPendingExams(true)}>
-        <span className="pending-review-icon" aria-hidden="true">◷</span><span><strong>Tareas pendientes de revisar</strong><small>Exámenes con respuestas abiertas pendientes de revisión</small></span><b>{pendingExamReviews.length}</b>
-      </button>
-      <section className="dashboard-group-section" aria-labelledby="dashboard-groups-title">
-        <div className="academic-matrix-header"><div><p className="eyebrow">RESUMEN DEL PARCIAL</p><h2 id="dashboard-groups-title">Promedio por grupo</h2></div><span className="result-count">{str(partial ?? {}, "nombre")}</span></div>
-        <div className="dashboard-group-grid">{groupAverages.map((item) => <article className="dashboard-group-card" key={item.group}><span>{item.group}</span><strong>{item.average === null ? "—" : item.average.toFixed(1)}</strong><small>{item.evaluated} de {item.total} alumnos con calificación final</small></article>)}</div>
-      </section>
-      <section className="dashboard-ranking" aria-labelledby="dashboard-ranking-title"><div className="academic-matrix-header"><div><p className="eyebrow">ATENCIÓN DOCENTE</p><h2 id="dashboard-ranking-title">10 promedios más bajos</h2></div><span className="result-count">Escala de 10</span></div>
-        {lowestStudents.length ? <ol>{lowestStudents.map(({ grade, name }) => <li key={`${grade.studentId}:${grade.group}`}><span><strong>{name}</strong><small>{grade.group}</small></span><b>{grade.final10?.toFixed(1)}</b></li>)}</ol> : <p className="dashboard-empty">Todavía no hay calificaciones finales para este parcial.</p>}
-      </section>
-      {showPendingExams && <div className="academic-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowPendingExams(false); }}><section className="academic-dialog pending-exam-dialog" role="dialog" aria-modal="true" aria-labelledby="pending-exams-title"><button className="dialog-close" type="button" aria-label="Cerrar" onClick={() => setShowPendingExams(false)}>×</button><p className="eyebrow">SOLO INFORMATIVO · {str(partial ?? {}, "nombre")}</p><h3 id="pending-exams-title">Exámenes pendientes de revisión</h3>{pendingExamReviews.length ? <ul>{pendingExamReviews.map((item) => <li key={item.attemptId}><strong>{item.studentName || item.studentId}</strong><span>{item.examName} · {item.status}</span></li>)}</ul> : <p>No hay exámenes pendientes de revisar en este parcial.</p>}<button className="secondary-button" type="button" onClick={() => setShowPendingExams(false)}>Cerrar</button></section></div>}
-    </div>}
+    {mode === "dashboard" && (
+      <AcademicDashboardView
+        partialName={str(partial ?? {}, "nombre")}
+        pendingExamReviews={pendingExamReviews}
+        groupAverages={groupAverages}
+        lowestStudents={lowestStudents}
+        showPendingExams={showPendingExams}
+        onShowPendingExams={setShowPendingExams}
+      />
+    )}
 
     {mode === "clases" && displayView === "session" && <section className="academic-card session-view">
       {!sessionId || !currentSession ? <div className="session-empty"><p className="eyebrow">{today}</p><h3>Sesión del día</h3><p>Abre la sesión de hoy para registrar asistencia, comentarios y actividades del grupo.</p><button className="primary-button" type="button" onClick={() => void openToday()} disabled={!!busy || !partialId || !group}>Abrir sesión de hoy · {group}</button></div> : <>
         <header className="academic-matrix-header session-heading"><div><p className="eyebrow">SESIÓN · {str(currentSession, "fecha_clase")}</p><h3>{group}</h3>{str(currentSession, "tema") && <p>{str(currentSession, "tema")}</p>}</div><div className="session-heading-actions"><button type="button" className="secondary-button compact" onClick={() => { setSessionId(""); setView("review"); }}>Ver sesiones</button><button type="button" className="primary-button compact" onClick={() => void saveSession()} disabled={!!busy}>Guardar</button><button type="button" className="danger-button compact" onClick={() => setShowDeleteConfirmation(true)} disabled={!!busy}>Archivar</button></div></header>
         <div className="session-actions"><button type="button" className="secondary-button compact" onClick={() => setShowTaskForm("Tarea")} disabled={!!busy}>Agregar tarea</button>{pendingTasks.length > 0 && <button type="button" className="secondary-button compact" onClick={() => { setSelectedPendingIds([]); setShowTaskBank(true); }} disabled={!!busy}>Calificar tareas <span className="task-count">{pendingTasks.length}</span></button>}<button type="button" className="secondary-button compact" onClick={() => setShowTaskForm("Trabajo en clase")} disabled={!!busy}>Agregar trabajo en clase</button></div>
         {pendingTasks.length > 0 && <p className="session-hint">{pendingTasks.length} tarea(s) pendientes en el banco; elige cuándo calificarlas.</p>}
-        <div className="session-table-scroll" ref={sessionTableScrollRef}><table className="session-table"><thead><tr><th className="student-column">Alumno</th><th>Asistencia</th><th>Comentario</th>{sessionTasks.map((task) => <th key={str(task, "tarea_id")} className="activity-column"><div className="session-task-heading"><span>{str(task, "nombre")}</span><small>{str(task, "tipo") === "Tarea" ? "Tarea" : "Trabajo en clase"}</small><button type="button" className="task-delete-inline" aria-label={`Archivar ${str(task, "tipo") === "Tarea" ? "tarea" : "trabajo en clase"} ${str(task, "nombre")}`} onClick={() => setTaskToDelete(task)} disabled={!!busy}>Archivar</button></div></th>)}</tr></thead><tbody>
+        <div className="session-table-scroll" ref={sessionTableScrollRef}><table className="session-table"><thead><tr><th className="student-column">Alumno</th><th>Asistencia</th><th>Comentario</th>{sessionTasks.map((task) => <th key={str(task, "tarea_id")} className="activity-column"><div className="session-task-heading"><span>{str(task, "nombre")}</span><small>{str(task, "tipo") === "Tarea" ? "Tarea" : "Trabajo en clase"}</small>{str(task, "evaluacion_examen_id") && <button type="button" className="task-delete-inline" aria-label={`Editar tiempo y bloqueo de ${str(task, "nombre")}`} onClick={() => openTaskPolicyEditor(task)} disabled={!!busy}>Tiempo y bloqueo</button>}<button type="button" className="task-delete-inline" aria-label={`Archivar ${str(task, "tipo") === "Tarea" ? "tarea" : "trabajo en clase"} ${str(task, "nombre")}`} onClick={() => setTaskToDelete(task)} disabled={!!busy}>Archivar</button></div></th>)}</tr></thead><tbody>
           {students.map((student) => {
             const id = str(student, "id");
             const draft = studentDrafts[id] ?? { attendance: "P", annotation: "" };
@@ -540,7 +751,21 @@ export function TeacherAcademicModule({ active, mode, partialId, onPartialChange
                 const taskDraft = taskDrafts[key] ?? { score: "0" };
                 if (str(task, "evaluacion_examen_id")) {
                   const score = linkedScore(task, id);
-                  return <td key={str(task, "tarea_id")}><div className="task-grade-cell"><span aria-label={`Nota de evaluación para ${str(student, "nombre")}`}>{score === null ? "Pendiente" : `${(score / 10).toFixed(2)} / 10`}</span></div></td>;
+                  return (
+                    <td key={str(task, "tarea_id")}>
+                      <div className="task-grade-cell">
+                        <button
+                          type="button"
+                          className="text-button"
+                          style={{ fontWeight: 600, padding: "0.2rem 0.4rem", fontSize: "0.85rem", textDecoration: "underline" }}
+                          aria-label={`Calificación de ${str(task, "nombre")} para ${str(student, "nombre")}: ${score === null ? "Pendiente" : `${(score / 10).toFixed(2)} / 10`}. Clic para editar calificación.`}
+                          onClick={() => openAssessmentGradeModal(task, student, score)}
+                        >
+                          {score === null ? "Pendiente" : `${(score / 10).toFixed(2)} / 10`}
+                        </button>
+                      </div>
+                    </td>
+                  );
                 }
                 return <td key={str(task, "tarea_id")}><div className="task-grade-cell"><input aria-label={`Calificación de ${str(task, "nombre")} para ${str(student, "nombre")}, sobre 10`} type="text" inputMode="decimal" placeholder="0" value={taskDraft.score} onKeyDown={focusNextTaskGrade} onChange={(event) => updateTaskDraft(str(task, "tarea_id"), id, { score: sanitizeGradeInput(event.target.value) })} onBlur={() => updateTaskDraft(str(task, "tarea_id"), id, { score: clampGradeInput(taskDraft.score) })} /></div></td>;
               })}
@@ -550,16 +775,26 @@ export function TeacherAcademicModule({ active, mode, partialId, onPartialChange
       </>}
     </section>}
 
-    {mode === "clases" && displayView === "review" && <section className="session-review">
-      <div className="academic-matrix-header"><div><h3>Sesiones · {group}</h3><p>Abre el detalle para consultar o continuar la captura de una clase.</p></div><button className="primary-button" type="button" onClick={() => { setSessionDate(today); setShowSessionForm(true); }}>Agregar sesión</button></div>
-      {sessions.filter((session) => str(session, "fecha_clase") <= today).length === 0 ? <div className="academic-card"><p>Aún no hay sesiones registradas para este grupo y parcial.</p></div> : <div className="session-card-grid">{sessions.filter((session) => str(session, "fecha_clase") <= today).map((session) => {
-        const id = str(session, "sesion_id");
-        const sessionWork = data?.snapshot.tasks.filter((item) => String(item.activa).toUpperCase() !== "FALSE" && (str(item, "sesion_id") === id || str(item, "sesion_calificacion_id") === id)) ?? [];
-        return <article className="session-review-card" key={id}>
-          <strong>{str(session, "fecha_clase")}</strong><span>{sessionWork.length} trabajo(s) o tarea(s)</span><button type="button" className="secondary-button compact" onClick={() => { setSessionId(id); setView("session"); }}>Detalle</button>
-        </article>;
-      })}</div>}
-    </section>}
+    {mode === "clases" && displayView === "review" && <>
+      <section className="session-review">
+        <div className="academic-matrix-header"><div><h3>Sesiones · {group}</h3><p>Abre el detalle para consultar o continuar la captura de una clase.</p></div><button className="primary-button" type="button" onClick={() => { setSessionDate(today); setShowSessionForm(true); }}>Agregar sesión</button></div>
+        {sessions.filter((session) => str(session, "fecha_clase") <= today).length === 0 ? <div className="academic-card"><p>Aún no hay sesiones registradas para este grupo y parcial.</p></div> : <div className="session-card-grid">{sessions.filter((session) => str(session, "fecha_clase") <= today).map((session) => {
+          const id = str(session, "sesion_id");
+          const sessionWork = data?.snapshot.tasks.filter((item) => String(item.activa).toUpperCase() !== "FALSE" && (str(item, "sesion_id") === id || str(item, "sesion_calificacion_id") === id)) ?? [];
+          return <article className="session-review-card" key={id}>
+            <strong>{str(session, "fecha_clase")}</strong><span>{sessionWork.length} trabajo(s) o tarea(s)</span><button type="button" className="secondary-button compact" onClick={() => { setSessionId(id); setView("session"); }}>Detalle</button>
+          </article>;
+        })}</div>}
+      </section>
+
+      <AttendanceMatrixTable
+        group={group}
+        partialName={str(partial ?? {}, "nombre")}
+        students={students}
+        sessions={sessions}
+        absences={data?.snapshot.absences ?? []}
+      />
+    </>}
 
     {mode === "calificaciones" && <section className="academic-card matrix-card grades-overview">
       <div className="academic-matrix-header"><div><p className="eyebrow">{group} · {str(partial ?? {}, "nombre")}</p><h3>Resumen del grupo</h3><p>Ordenado por apellidos. Selecciona un nombre para ver el detalle. El promedio final pondera CA 10%, EC 40% y EXAM 50%; requiere los tres componentes.</p></div><div className="session-heading-actions"><button type="button" className="secondary-button compact" onClick={() => void copyGroupGrades()} disabled={!!busy || !students.length}>Copiar calificaciones</button></div></div>
@@ -567,46 +802,135 @@ export function TeacherAcademicModule({ active, mode, partialId, onPartialChange
       {!students.length && <p className="dashboard-empty">No hay alumnos registrados en este grupo.</p>}
     </section>}
 
-    {mode === "calificaciones" && detailStudent && <div className="academic-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetailStudentId(""); }}><section className="academic-dialog grade-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="grade-detail-title"><button className="dialog-close" type="button" aria-label="Cerrar" onClick={() => setDetailStudentId("")}>×</button><p className="eyebrow">{str(partial ?? {}, "nombre")} · {group}</p><h3 id="grade-detail-title">{str(detailStudent, "nombre")}</h3><p className="grade-detail-subtitle">ID {str(detailStudent, "id")} · Detalle de sesiones, asistencia y actividades</p>
-      <div className="matrix-scroll"><table className="academic-matrix grade-detail-table"><thead><tr><th>Sesión (día)</th><th>Asistencia</th><th>Comentario</th><th>Trabajos en clase</th><th>Tareas</th></tr></thead><tbody>{(data?.snapshot.sessions ?? []).filter((session) => str(session, "parcial_id") === partialId && str(session, "grupo") === group && str(session, "estado") !== "Cancelada" && str(session, "fecha_clase") <= today).sort((a, b) => str(a, "fecha_clase").localeCompare(str(b, "fecha_clase"))).map((session) => {
-        const sid = str(session, "sesion_id");
-        const caRows = (data?.snapshot.conduct ?? []).filter((row) => str(row, "sesion_id") === sid && str(row, "alumno_id").toUpperCase() === detailStudentId.toUpperCase() && str(row, "estado") !== "Anulada");
-        const note = caRows.find((row) => ["Anotacion", "Anotación"].includes(str(row, "tipo")));
-        const attendance = (data?.snapshot.absences ?? []).find((row) => str(row, "sesion_id") === sid && str(row, "alumno_id").toUpperCase() === detailStudentId.toUpperCase());
-        const activities = (data?.snapshot.tasks ?? []).filter((task) => str(task, "parcial_id") === partialId && str(task, "grupo") === group && String(task.activa).toUpperCase() !== "FALSE" && (str(task, "sesion_calificacion_id") === sid || (str(task, "tipo") === "Trabajo en clase" && str(task, "sesion_id") === sid)));
-        const renderActivities = (kind: TaskKind) => { const matches = activities.filter((task) => str(task, "tipo") === kind); return matches.length ? <ul className="grade-detail-activities">{matches.map((task) => { const result = (data?.snapshot.taskScores ?? []).find((row) => str(row, "tarea_id") === str(task, "tarea_id") && str(row, "alumno_id").toUpperCase() === detailStudentId.toUpperCase()); const state = str(result ?? {}, "estado"); const score = numeric(result ?? {}, "puntaje"); const resultText = score !== "" ? `${formatTaskScore(score, task)}/10` : state === "Justificada" || state === "Excluida" ? "Justificada" : "0/10"; return <li key={str(task, "tarea_id")}><span>{str(task, "nombre")}</span><small>{resultText}</small></li>; })}</ul> : <span>—</span>; };
-        const attendanceStatus = attendanceLetter(attendance?.estado);
-        return <tr key={sid}><th>{str(session, "fecha_clase")}</th><td>{attendanceStatus}</td><td>{str(note ?? {}, "observacion") || "—"}</td><td>{renderActivities("Trabajo en clase")}</td><td>{renderActivities("Tarea")}</td></tr>;
-      })}</tbody></table></div>
-      <section className="grade-detail-reports" aria-labelledby="academic-report-title">
-        <div className="academic-matrix-header"><div><p className="eyebrow">REVISIÓN DOCENTE · {str(partial ?? {}, "nombre")}</p><h4 id="academic-report-title">Retroalimentación académica</h4><p>La IA prepara una propuesta basada en los registros del parcial. Revísala antes de compartirla.</p></div>
-          <button className="primary-button compact" type="button" onClick={() => void save("generateAiReport", { studentId: detailStudentId, partialId }, "Propuesta generada y guardada como pendiente de revisión.")} disabled={!!busy || !partialId}>Evaluar</button>
-        </div>
-        {detailReports.length ? <div className="grade-report-list">{detailReports.map((report) => {
-          const strengths = reportList(report.fortalezas);
-          const opportunities = reportList(report.areas_oportunidad);
-          const recommendations = reportList(report.recomendaciones_json);
-          const pending = str(report, "estado") === "Pendiente_revision_docente";
-          return <article className="grade-report-card" key={str(report, "reporte_id")}>
-            <div className="grade-report-heading"><span className="eyebrow">{pending ? "PENDIENTE DE REVISIÓN" : str(report, "estado") || "REPORTE"}</span><small>{str(report, "created_at") ? new Date(str(report, "created_at")).toLocaleDateString("es-MX") : ""}</small></div>
-            <p>{str(report, "resumen")}</p>
-            {strengths.length > 0 && <div><strong>Fortalezas</strong><ul>{strengths.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul></div>}
-            {opportunities.length > 0 && <div><strong>Áreas de oportunidad</strong><ul>{opportunities.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul></div>}
-            {recommendations.length > 0 && <div><strong>Recomendaciones</strong><ul>{recommendations.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul></div>}
-            {pending && <button className="secondary-button compact" type="button" onClick={() => void save("publishAiReport", { reportId: str(report, "reporte_id") }, "Retroalimentación aprobada y compartida con el alumno.")} disabled={!!busy}>Aprobar y compartir</button>}
-          </article>;
-        })}</div> : <p className="session-hint">Aún no hay propuestas para este alumno en el parcial.</p>}
-      </section>
-      <button className="secondary-button" type="button" onClick={() => setDetailStudentId("")}>Cerrar</button></section></div>}
+    {mode === "calificaciones" && detailStudent && (
+      <AcademicStudentDetailDialog
+        detailStudent={detailStudent}
+        partialId={partialId}
+        partialName={str(partial ?? {}, "nombre")}
+        group={group}
+        sessions={data?.snapshot.sessions ?? []}
+        conduct={data?.snapshot.conduct ?? []}
+        absences={data?.snapshot.absences ?? []}
+        tasks={data?.snapshot.tasks ?? []}
+        taskScores={data?.snapshot.taskScores ?? []}
+        detailReports={detailReports}
+        today={today}
+        busy={!!busy}
+        onClose={() => setDetailStudentId("")}
+        onGenerateAiReport={() => void save("generateAiReport", { studentId: detailStudentId, partialId }, "Propuesta generada y guardada como pendiente de revisión.")}
+        onPublishAiReport={(reportId) => void save("publishAiReport", { reportId }, "Retroalimentación aprobada y compartida con el alumno.")}
+      />
+    )}
 
     {mode === "clases" && showSessionForm && <div className="academic-dialog-backdrop" role="presentation"><section className="academic-dialog" role="dialog" aria-modal="true" aria-labelledby="session-form-title"><button className="dialog-close" type="button" aria-label="Cerrar" onClick={() => setShowSessionForm(false)}>×</button><p className="eyebrow">NUEVA SESIÓN · {group}</p><h3 id="session-form-title">Agregar sesión</h3><form className="academic-form" onSubmit={(event) => void createSession(event)}><label><span>Fecha de clase</span><input type="date" value={sessionDate} onChange={(event) => setSessionDate(event.target.value)} required /></label><button className="primary-button" disabled={!!busy}>Crear sesión</button></form></section></div>}
     {mode === "clases" && showTaskForm && <div className="academic-dialog-backdrop" role="presentation"><section className="academic-dialog" role="dialog" aria-modal="true" aria-labelledby="task-form-title"><button className="dialog-close" type="button" aria-label="Cerrar" onClick={() => setShowTaskForm(null)}>×</button><p className="eyebrow">{showTaskForm === "Tarea" ? "BANCO DE TAREAS · SIN FECHA DE CALIFICACIÓN" : `TRABAJO EN CLASE · ${str(currentSession ?? {}, "fecha_clase")}`}</p><h3 id="task-form-title">{showTaskForm === "Tarea" ? "Agregar tarea" : "Agregar trabajo en clase"}</h3><form className="academic-form" onSubmit={(event) => void createTask(event)}><label><span>Nombre</span><input name="name" required maxLength={120} /></label><label><span>Descripción</span><textarea name="description" maxLength={2000} rows={3} /></label><div className="gemini-actions"><button className="primary-button" disabled={!!busy}>Guardar</button><button className="secondary-button" type="button" onClick={() => { setShowAssessmentPicker(showTaskForm); setShowTaskForm(null); }} disabled={!!busy}>Desde repositorio</button></div></form></section></div>}
 
     {mode === "clases" && showAssessmentPicker && sessionId && <TeacherAssessmentPicker partialId={partialId} sessionId={sessionId} group={group} taskType={showAssessmentPicker} onClose={() => setShowAssessmentPicker(null)} onAssigned={refreshAfterAssessmentAssignment} />}
-    {mode === "clases" && showTaskBank && <div className="academic-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowTaskBank(false); }}><section className="academic-dialog task-bank-dialog" role="dialog" aria-modal="true" aria-labelledby="task-bank-title"><button className="dialog-close" type="button" aria-label="Cerrar" onClick={() => setShowTaskBank(false)}>×</button><p className="eyebrow">TAREAS PENDIENTES · {group}</p><h3 id="task-bank-title">Elige las tareas que vas a calificar</h3><div className="task-bank-list">{pendingTasks.length ? pendingTasks.map((task) => { const id = str(task, "tarea_id"); const selected = selectedPendingIds.includes(id); return <div className="task-bank-option" key={id}><label className="task-bank-option-select"><input type="checkbox" checked={selected} onChange={(event) => setSelectedPendingIds((current) => event.target.checked ? [...current, id] : current.filter((item) => item !== id))} /><span><strong>{str(task, "nombre")}</strong><small>Agregada el {str(task, "fecha_asignacion") || "—"} · {str(task, "descripcion") || "Sin descripción"}</small></span></label><button type="button" className="task-delete-inline" aria-label={`Archivar tarea ${str(task, "nombre")} del banco`} onClick={() => setTaskToDelete(task)} disabled={!!busy}>Archivar</button></div>; }) : <p className="task-bank-empty">No hay tareas pendientes en el banco.</p>}</div><button className="primary-button" type="button" onClick={() => void attachPendingTasks()} disabled={!!busy || !selectedPendingIds.length}>Agregar a esta sesión</button></section></div>}
+    {mode === "clases" && showTaskBank && <div className="academic-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowTaskBank(false); }}><section className="academic-dialog task-bank-dialog" role="dialog" aria-modal="true" aria-labelledby="task-bank-title"><button className="dialog-close" type="button" aria-label="Cerrar" onClick={() => setShowTaskBank(false)}>×</button><p className="eyebrow">TAREAS PENDIENTES · {group}</p><h3 id="task-bank-title">Elige las tareas que vas a calificar</h3><div className="task-bank-list">{pendingTasks.length ? pendingTasks.map((task) => { const id = str(task, "tarea_id"); const selected = selectedPendingIds.includes(id); return <div className="task-bank-option" key={id}><label className="task-bank-option-select"><input type="checkbox" checked={selected} onChange={(event) => setSelectedPendingIds((current) => event.target.checked ? [...current, id] : current.filter((item) => item !== id))} /><span><strong>{str(task, "nombre")}</strong><small>Agregada el {str(task, "fecha_asignacion") || "—"} · {str(task, "descripcion") || "Sin descripción"}</small></span></label><div className="gemini-actions">{str(task, "evaluacion_examen_id") && <button type="button" className="task-delete-inline" aria-label={`Editar tiempo y bloqueo de ${str(task, "nombre")}`} onClick={() => openTaskPolicyEditor(task)} disabled={!!busy}>Tiempo y bloqueo</button>}<button type="button" className="task-delete-inline" aria-label={`Archivar tarea ${str(task, "nombre")} del banco`} onClick={() => setTaskToDelete(task)} disabled={!!busy}>Archivar</button></div></div>; }) : <p className="task-bank-empty">No hay tareas pendientes en el banco.</p>}</div><button className="primary-button" type="button" onClick={() => void attachPendingTasks()} disabled={!!busy || !selectedPendingIds.length}>Agregar a esta sesión</button></section></div>}
 
     {mode === "clases" && annotationStudent && <div className="academic-dialog-backdrop" role="presentation"><section className="academic-dialog" role="dialog" aria-modal="true" aria-labelledby="annotation-title"><button className="dialog-close" type="button" aria-label="Cerrar" onClick={() => setAnnotationStudentId("")}>×</button><p className="eyebrow">ANOTACIÓN · {group} · {str(currentSession ?? {}, "fecha_clase")}</p><h3 id="annotation-title">{str(annotationStudent, "nombre")}</h3><label className="annotation-editor"><span>Incidente u observación</span><textarea rows={5} maxLength={1000} value={studentDrafts[annotationStudentId]?.annotation ?? ""} onChange={(event) => updateStudent(annotationStudentId, { annotation: event.target.value })} /></label><button className="primary-button" type="button" onClick={() => setAnnotationStudentId("")}>Listo</button></section></div>}
     {mode === "clases" && showDeleteConfirmation && currentSession && <div className="academic-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setShowDeleteConfirmation(false); }}><section className="academic-dialog session-delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-session-title" aria-describedby="delete-session-description"><button className="dialog-close" type="button" aria-label="Cerrar" onClick={() => setShowDeleteConfirmation(false)} disabled={!!busy}>×</button><p className="eyebrow">{group} · {str(partial ?? {}, "nombre")}</p><h3 id="delete-session-title">¿Archivar esta sesión?</h3><p id="delete-session-description">La sesión del {str(currentSession, "fecha_clase")} y las tareas o trabajos creados o calificados en ella pasarán a Archivados. Sus asistencias, comentarios y calificaciones se conservarán para consulta y dejarán de participar en los cálculos activos.</p><div className="session-delete-actions"><button type="button" className="secondary-button" onClick={() => setShowDeleteConfirmation(false)} disabled={!!busy}>Cancelar</button><button type="button" className="danger-button" onClick={() => void deleteSession()} disabled={!!busy}>Sí, archivar sesión</button></div></section></div>}
     {mode === "clases" && taskToDelete && <div className="academic-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setTaskToDelete(null); }}><section className="academic-dialog session-delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-task-title" aria-describedby="delete-task-description"><button className="dialog-close" type="button" aria-label="Cerrar" onClick={() => setTaskToDelete(null)} disabled={!!busy}>×</button><p className="eyebrow">{group} · {str(partial ?? {}, "nombre")}</p><h3 id="delete-task-title">¿Archivar {str(taskToDelete, "tipo") === "Tarea" ? "esta tarea" : "este trabajo en clase"}?</h3><p id="delete-task-description">“{str(taskToDelete, "nombre")}” dejará las sesiones, el banco y los cálculos activos. Sus calificaciones se conservarán y podrás consultar la actividad en Archivados.</p><div className="session-delete-actions"><button type="button" className="secondary-button" onClick={() => setTaskToDelete(null)} disabled={!!busy}>Cancelar</button><button type="button" className="danger-button" onClick={() => void deleteTaskActivity()} disabled={!!busy}>Sí, archivar</button></div></section></div>}
+    {mode === "clases" && taskToEditPolicy && <div className="academic-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setTaskToEditPolicy(null); }}><section className="academic-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-task-policy-title">
+      <button className="dialog-close" type="button" aria-label="Cerrar" onClick={() => setTaskToEditPolicy(null)} disabled={!!busy}>×</button>
+      <p className="eyebrow">{group} · {str(taskToEditPolicy, "tipo").toUpperCase()}</p>
+      <h3 id="edit-task-policy-title">Tiempo y bloqueo · {str(taskToEditPolicy, "nombre")}</h3>
+      <p>Modifica el límite de tiempo y el bloqueo de pantalla completa / pérdida de foco de esta actividad.</p>
+      <div className="authoring-selects" style={{ marginTop: "0.75rem" }}>
+        <label className="select-field">
+          <span>Tiempo</span>
+          <select value={policyTimeMode} onChange={(event) => setPolicyTimeMode(event.target.value as "Estricto" | "Libre")} disabled={!!busy}>
+            <option value="Estricto">Estricto</option>
+            <option value="Libre">Libre</option>
+          </select>
+        </label>
+        {policyTimeMode === "Estricto" && (
+          <label className="select-field">
+            <span>Minutos (1–240)</span>
+            <input type="number" min={1} max={240} value={policyDurationMinutes} onChange={(event) => setPolicyDurationMinutes(Number(event.target.value))} disabled={!!busy} />
+          </label>
+        )}
+        <label className="select-field">
+          <span>Pantalla completa y pérdida de foco</span>
+          <select value={policyLockOnFocusLoss ? "Si" : "No"} onChange={(event) => setPolicyLockOnFocusLoss(event.target.value === "Si")} disabled={!!busy}>
+            <option value="Si">Activar bloqueo</option>
+            <option value="No">Sin bloqueo</option>
+          </select>
+        </label>
+      </div>
+      <div className="session-delete-actions" style={{ marginTop: "1rem" }}>
+        <button type="button" className="secondary-button" onClick={() => setTaskToEditPolicy(null)} disabled={!!busy}>Cancelar</button>
+        <button type="button" className="primary-button" onClick={() => void saveTaskPolicy()} disabled={!!busy}>Guardar cambios</button>
+      </div>
+    </section></div>}
+    {mode === "clases" && assessmentGradeTarget && (
+      <div className="academic-dialog-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) setAssessmentGradeTarget(null); }}>
+        <section className="academic-dialog" role="dialog" aria-modal="true" aria-labelledby="assessment-grade-modal-title">
+          <button className="dialog-close" type="button" aria-label="Cerrar" onClick={() => setAssessmentGradeTarget(null)} disabled={!!busy}>×</button>
+          <p className="eyebrow">CALIFICACIÓN DE ACTIVIDAD · {group}</p>
+          <h3 id="assessment-grade-modal-title">{str(assessmentGradeTarget.task, "nombre")}</h3>
+          <p><strong>{str(assessmentGradeTarget.student, "nombre")}</strong> ({str(assessmentGradeTarget.student, "id")})</p>
+          <p style={{ fontSize: "0.85rem", color: "#64748b" }}>
+            {assessmentGradeTarget.currentGrade10 === null
+              ? "Esta actividad aún no registra entrega del alumno o está pendiente de evaluación."
+              : `Calificación registrada actualmente: ${assessmentGradeTarget.currentGrade10} / 10.`}
+          </p>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem", marginTop: "1rem" }}>
+            <label className="select-field">
+              <span>Calificación manual sobre 10 (0 - 10)</span>
+              <input
+                type="number"
+                min="0"
+                max="10"
+                step="0.01"
+                inputMode="decimal"
+                value={assessmentManualGrade}
+                onChange={(e) => setAssessmentManualGrade(e.target.value)}
+                placeholder="Ej. 9.5"
+                disabled={!!busy}
+              />
+            </label>
+
+            <label className="select-field">
+              <span>Motivo del ajuste (obligatorio)</span>
+              <textarea
+                rows={3}
+                maxLength={500}
+                value={assessmentManualReason}
+                onChange={(e) => setAssessmentManualReason(e.target.value)}
+                placeholder="Explica el motivo del cambio o asignación de calificación…"
+                disabled={!!busy}
+              />
+            </label>
+          </div>
+
+          <div className="session-delete-actions" style={{ marginTop: "1.25rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            {assessmentGradeTarget.currentGrade10 !== null ? (
+              <button
+                type="button"
+                className="danger-button compact"
+                onClick={() => void revokeAssessmentForStudent()}
+                disabled={!!busy}
+                title="Elimina el intento entregado para permitirle al alumno volver a presentar la actividad"
+              >
+                Revocar intento
+              </button>
+            ) : <span />}
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <button type="button" className="secondary-button" onClick={() => setAssessmentGradeTarget(null)} disabled={!!busy}>Cancelar</button>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => void saveAssessmentGrade()}
+                disabled={!!busy || !assessmentManualReason.trim() || !assessmentManualGrade.trim()}
+              >
+                Guardar calificación
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+    )}
   </section>{busy && <ProgressOverlay title={busy.title} detail={busy.detail} />}</>;
 }
