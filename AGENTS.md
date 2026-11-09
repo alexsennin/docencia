@@ -63,3 +63,16 @@ Vercel se publica con la CLI del proyecto (`npx --yes vercel@60.0.0 deploy --pro
 ## Cierre local
 
 Al entregar, indica objetivo, rutas modificadas, evidencia y límites, rama/HEAD, estado sucio y cambios ajenos, remoto, despliegue/Producción y siguiente paso. Distingue código implementado, publicado en Git, desplegado y verificado en Producción.
+
+
+---
+
+## Orientación empresarial — IntegraTech Business Governance v1.0
+
+- Antes de **priorizar** una funcionalidad relevante, consultar [PRODUCT_STRATEGY.md](PRODUCT_STRATEGY.md): objetivo, alcance y restricciones comerciales disponibles.
+- Fuente canónica de **decisiones empresariales aprobadas**: [IntegraTech Business Strategy](https://github.com/alexsennin/integratech-business-strateg/blob/main/05_BUSINESS_DECISIONS/DECISION_LOG.md) (repositorio privado).
+- Si una solicitud se aparta del objetivo empresarial aprobado, **advertir y explicar el costo de oportunidad**, proponer backlog o revisión; **no bloquear automáticamente** una instrucción explícita autorizada.
+- Nunca transformar conversaciones, hipótesis o resultados técnicos en decisiones empresariales aprobadas de forma automática.
+- Si no existe dirección empresarial aprobada para este producto, indicarlo y continuar con los requisitos funcionales y autorizaciones técnicas existentes. **No inventar un MVP ni un precio.**
+- Si GitHub privado es inaccesible, usar la copia estratégica local e indicar que no se verificó su vigencia.
+- **ARC Development Standard y todas las reglas previas de este AGENTS.md permanecen vigentes sin alteración.** Este enlace no permite desplegar, cambiar datos, fijar precios ni realizar inversiones.
